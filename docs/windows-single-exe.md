@@ -40,13 +40,13 @@ python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.
 
 ## Проверенный тестовый артефакт
 
-2026-10-19, [Actions run 39318786724](https://github.com/DenisPapushaJava/dxf-generator/actions/runs/39318786724), исходники приложения `acf3400`:
+2026-10-19, [Actions run 39322537466](https://github.com/DenisPapushaJava/dxf-generator/actions/runs/39322537466), исходники приложения `5ca8ad6`:
 
 - MSVC 19.44 x64, статический QtBase 6.10.3 и статический C++ runtime.
-- Один `dxf-generator.exe`: **17 053 696 байт**, 16,2637 МиБ; без UPX и самораспаковки. Исправления CAM-имён добавили 5 632 байта без новых библиотек.
+- Один `dxf-generator.exe`: **17 051 136 байт**, 16,2612 МиБ; без UPX и самораспаковки. Ручное создание использует автоматические CAM-имена, поля названия нет.
 - CTest: 3/3 (запуск окна, CAM-имена/локали и защита файлов при экспорте, геометрия/DXF).
 - PE-аудит: только системные DLL, включая проверку delay imports; лимит 20 МиБ пройден.
 - В PE встроены иконка, сведения о версии и manifest. Рядом не нужны Qt DLL, runtime компилятора, `platforms/`, шрифты или настройки.
-- SHA-256: `b5d34b1ce7c4bcc60642e943b0c232e19079c6eac5fb720302635cab41af75aa`.
+- SHA-256: `39d5726242ab491e7a08857c8f0fe04ccc41d4def8e87c8fc9d7897f430b9724`.
 
 Это подтверждение сборки и запуска на Windows CI. Ручная проверка чистых Windows 10/11, разных DPI и целевой CAD/CAM остаётся отдельным этапом перед пользовательским релизом.
