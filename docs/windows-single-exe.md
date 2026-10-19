@@ -12,6 +12,8 @@
 
 Qt использует системную `Authz.dll` для проверки файловых разрешений Windows; эта зависимость разрешена аудитом ([Microsoft: AuthzAccessCheck](https://learn.microsoft.com/en-us/windows/win32/api/authz/nf-authz-authzaccesscheck)). SDK кешируется сразу после установки, чтобы ошибка приложения или аудита не требовала повторной сборки Qt.
 
+Также допустимы системные `D3D12.dll`, `UIAutomationCore.dll` и `icuuc.dll`. Последняя поставляется в Windows начиная с 10 версии 1703; Qt использует ICU из Windows SDK, даже при отключённой сторонней ICU. Это не отдельная поставляемая библиотека ([Microsoft: ICU в Windows](https://learn.microsoft.com/en-us/windows/win32/intl/international-components-for-unicode--icu-), [UI Automation](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-uiautomationoverview)).
+
 ## Локальная Windows-сборка
 
 1. Установить MSVC 2022 x64, Windows SDK, CMake и Ninja. Открыть x64 Developer PowerShell.

@@ -56,7 +56,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ctest --preset release-windows-static
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.exe
+          python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.exe --max-mib 20
           exit $LASTEXITCODE
       - name: Store test artifact (not a GitHub Release)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
