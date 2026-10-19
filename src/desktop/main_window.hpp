@@ -5,7 +5,6 @@
 class QComboBox;
 class QDoubleSpinBox;
 class QSpinBox;
-class QLineEdit;
 class QLabel;
 class QPushButton;
 class QTableView;
@@ -29,7 +28,6 @@ class MainWindow final : public QMainWindow {
     PartsModel* model_;
     QTableView* table_;
     PreviewWidget* preview_;
-    QLineEdit* name_;
     QComboBox* shape_;
     QDoubleSpinBox* first_;
     QDoubleSpinBox* second_;

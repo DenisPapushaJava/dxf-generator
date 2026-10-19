@@ -11,7 +11,6 @@
 #include <QFormLayout>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
@@ -108,9 +107,6 @@ MainWindow::MainWindow() {
     auto* form = new QFormLayout;
     form->setRowWrapPolicy(QFormLayout::WrapAllRows);
     form->setVerticalSpacing(10);
-    name_ = new QLineEdit;
-    name_->setPlaceholderText(QStringLiteral("По форме и размерам"));
-    form->addRow(QStringLiteral("&Название (необязательно)"), name_);
     shape_ = new QComboBox;
     shape_->addItems(
         {QStringLiteral("Прямоугольник"), QStringLiteral("Круг"), QStringLiteral("Шайба")});
@@ -183,7 +179,6 @@ MainWindow::MainWindow() {
             loadSelection();
         refreshSummary();
     });
-    connect(name_, &QLineEdit::textEdited, this, [this] { updatePart(); });
     connect(shape_, &QComboBox::currentIndexChanged, this, [this] {
         if (loading_ || !model_->part(currentRow()))
             return;
@@ -214,14 +209,13 @@ void MainWindow::loadSelection() {
         return;
     }
     loading_ = true;
-    name_->setText(QString::fromStdString(value->name));
     shape_->setCurrentIndex(static_cast<int>(value->shape.index()));
     const bool rectangle = std::holds_alternative<Rectangle>(value->shape);
     const bool washer = std::holds_alternative<Washer>(value->shape);
-    firstLabel_->setText(rectangle ? QStringLiteral("&Ширина")
+    firstLabel_->setText(rectangle ? QStringLiteral("&Длина")
                          : washer  ? QStringLiteral("&Наружный диаметр")
                                    : QStringLiteral("&Диаметр"));
-    secondLabel_->setText(rectangle ? QStringLiteral("&Высота")
+    secondLabel_->setText(rectangle ? QStringLiteral("&Ширина")
                                     : QStringLiteral("&Внутренний диаметр"));
     second_->setVisible(rectangle || washer);
     secondLabel_->setVisible(rectangle || washer);
@@ -249,7 +243,6 @@ void MainWindow::updatePart() {
     if (loading_ || !model_->part(currentRow()))
         return;
     Part value = *model_->part(currentRow());
-    value.name = name_->text().toStdString();
     value.quantity = quantity_->value();
     value.thickness =
         thickness_->value() > 0 ? std::optional<double>(thickness_->value()) : std::nullopt;

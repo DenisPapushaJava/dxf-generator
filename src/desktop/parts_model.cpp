@@ -6,7 +6,7 @@
 
 namespace dxfgen {
 PartsModel::PartsModel(QObject* parent) : QAbstractTableModel(parent) {
-    rows_.push_back({{"Шайба опорная", Washer{}, 8, 6.0}, true});
+    rows_.push_back({{"", Washer{}, 8, 6.0}, true});
 }
 int PartsModel::rowCount(const QModelIndex& parent) const {
     return parent.isValid() ? 0 : static_cast<int>(rows_.size());
@@ -66,8 +66,7 @@ void PartsModel::update(int row, Part value) {
 int PartsModel::add(Shape shape) {
     const int row = rowCount();
     beginInsertRows({}, row, row);
-    Part value{
-        std::string(shape_name(shape)) + " " + std::to_string(row + 1), std::move(shape), 1, {}};
+    Part value{"", std::move(shape), 1, {}};
     rows_.push_back({std::move(value), true});
     endInsertRows();
     return row;
