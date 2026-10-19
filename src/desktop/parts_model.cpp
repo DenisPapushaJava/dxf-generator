@@ -24,8 +24,12 @@ QVariant PartsModel::data(const QModelIndex& index, int role) const {
     if (role == Qt::ToolTipRole)
         return filename.error.isEmpty() ? filename.name : filename.error;
     if (role == Qt::AccessibleTextRole || role == Qt::DisplayRole) {
-        if (index.column() == 0)
-            return row.part.name.empty() ? filename.name : QString::fromStdString(row.part.name);
+        if (index.column() == 0) {
+            if (!row.part.name.empty())
+                return QString::fromStdString(row.part.name);
+            return filename.name.isEmpty() ? QString::fromUtf8(shape_name(row.part.shape))
+                                           : filename.name;
+        }
         if (index.column() == 1)
             return QString::fromUtf8(shape_name(row.part.shape));
         if (index.column() == 2)
