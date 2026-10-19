@@ -3,6 +3,7 @@
 - Keep this a small offline C++20/Qt Widgets utility for Windows 10/11 x64, developed on Linux.
 - The primary workflow is Excel list → row validation and preview → DXF files in a chosen folder. Prioritize this complete path over manual editing features. Project/kit files, CSV, nesting, materials and Undo/Redo are outside the current scope.
 - DXF filenames are an interface consumed by CAM. Follow `docs/cam-filenames.md`: comma decimals independent of OS locale, optional source name, legacy field order and `(1)` duplicate suffixes. Do not silently sanitize identifiers or invent separators/suffixes.
+- Circles use only one dimension in automatic filenames: `К_<diameter>[_<thickness>мм]_<quantity>шт.dxf`. Do not add a second dimension or zero placeholder; ignore Excel column D for circles. This is the owner's explicit change from legacy naming.
 - Manual creation has no name input: use automatic shape/dimension filenames. The optional custom name is only source metadata from Excel; keep it when editing imported parameters.
 - `dxfgen_core` must have no Qt or other third-party dependencies. Geometry, validation and DXF serialization belong here, not in widgets.
 - Preview and export must consume the same generated geometry. Dimensions are a preview overlay, never cutting geometry.

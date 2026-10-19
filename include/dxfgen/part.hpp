@@ -26,8 +26,6 @@ struct Part {
     Shape shape = Rectangle{};
     int quantity = 1;
     std::optional<double> thickness;
-    // Excel column D for circles: unused geometry, retained for legacy automatic filenames.
-    double circle_filename_width = 0.0;
 };
 
 enum class Field { name, dimension, quantity, thickness };

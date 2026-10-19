@@ -15,7 +15,7 @@ struct FileNameResult {
     QString error;
 };
 
-// Legacy CAM contract: Cyrillic units, comma decimals, no hidden identifier changes.
+// CAM contract: Cyrillic units, comma decimals, circle diameter only, no hidden name changes.
 [[nodiscard]] FileNameResult cam_file_name(const Part& part);
 // Validates the complete batch before creating files; existing files are never overwritten.
 // Duplicate batch positions use (1), (2); an existing destination rejects the batch.

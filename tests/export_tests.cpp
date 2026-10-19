@@ -24,12 +24,12 @@ void check_names() {
         {{"Диск", Circle{150}, 3, 2.5}, "Диск_2,5мм_3шт.dxf"},
         {{"Диск", Circle{150}, 3, 0.00001}, "Диск_1E-05мм_3шт.dxf"},
         {{"", Rectangle{200, 100}, 8, 6.0}, "П_200_100_6мм_8шт.dxf"},
-        {{"", Circle{150}, 3, 8.0}, "К_150_0_8мм_3шт.dxf"},
-        {{"", Circle{150.5}, 3, 2.5, 10.25}, "К_150,5_10,25_2,5мм_3шт.dxf"},
+        {{"", Circle{150}, 3, 8.0}, "К_150_8мм_3шт.dxf"},
+        {{"", Circle{150.5}, 3, 2.5}, "К_150,5_2,5мм_3шт.dxf"},
         {{"", Washer{100, 50}, 10, 5.0}, "Ш_100_50_5мм_10шт.dxf"},
         {{"", Rectangle{200.5, 100.25}, 8, 2.5}, "П_200,5_100,25_2,5мм_8шт.dxf"},
         {{"Пластина", Rectangle{}, 8, {}}, "Пластина_8шт.dxf"},
-        {{"", Circle{20}, 1, {}}, "К_20_0_1шт.dxf"},
+        {{"", Circle{20}, 1, {}}, "К_20_1шт.dxf"},
         {{"  Имя с пробелами ", Rectangle{}, 1, {}}, "  Имя с пробелами _1шт.dxf"},
         {{"Деталь.dxf", Rectangle{}, 1, {}}, "Деталь.dxf_1шт.dxf"},
         {{"CON", Rectangle{}, 1, {}}, "CON_1шт.dxf"},
@@ -115,10 +115,12 @@ void check_export() {
     require(QDir(long_names.path()).isEmpty(), "long-name preflight created files");
     QTemporaryDir auto_names;
     part = {"", Washer{100.5, 50.25}, 8, 2.5};
-    exported = export_parts(auto_names.path(), {part});
-    require(exported.error.isEmpty() && exported.files.size() == 1, "automatic name export");
+    exported = export_parts(auto_names.path(), {part, Part{"", Circle{150}, 3, 8.0}});
+    require(exported.error.isEmpty() && exported.files.size() == 2, "automatic name export");
     require(QFileInfo(exported.files[0]).fileName() == "Ш_100,5_50,25_2,5мм_8шт.dxf",
             "automatic name changed on disk");
+    require(QFileInfo(exported.files[1]).fileName() == "К_150_8мм_3шт.dxf",
+            "circle filename must not contain a second size on disk");
     QFile saved(exported.files[0]);
     require(saved.open(QIODevice::ReadOnly), "read automatic DXF");
     const auto dxf = saved.readAll();
@@ -134,7 +136,7 @@ int main(int argc, char** argv) {
     try {
         check_names();
         check_export();
-        std::cout << "Legacy CAM names, locale independence and export safety checks passed\n";
+        std::cout << "CAM filenames, locale independence and export safety checks passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

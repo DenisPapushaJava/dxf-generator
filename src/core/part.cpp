@@ -21,10 +21,6 @@ std::vector<ValidationError> validate(const Part& part) {
     if (part.thickness && !positive(*part.thickness))
         errors.push_back(
             {Field::thickness, "Толщина должна быть больше нуля и не больше 1 000 000 мм"});
-    if (std::holds_alternative<Circle>(part.shape) &&
-        (!std::isfinite(part.circle_filename_width) || part.circle_filename_width < 0 ||
-         part.circle_filename_width > 1'000'000.0))
-        errors.push_back({Field::dimension, "Поле ширины круга для имени: от 0 до 1 000 000 мм"});
     std::visit(
         [&errors](const auto& shape) {
             using T = std::decay_t<decltype(shape)>;

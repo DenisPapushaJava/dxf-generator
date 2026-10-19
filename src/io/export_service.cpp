@@ -44,8 +44,7 @@ FileNameResult cam_file_name(const Part& part) {
             stem = QStringLiteral("П_%1_%2").arg(cam_number(rectangle->width),
                                                  cam_number(rectangle->height));
         else if (const auto* circle = std::get_if<Circle>(&part.shape))
-            stem = QStringLiteral("К_%1_%2").arg(cam_number(circle->diameter),
-                                                 cam_number(part.circle_filename_width));
+            stem = QStringLiteral("К_%1").arg(cam_number(circle->diameter));
         else {
             const auto& washer = std::get<Washer>(part.shape);
             stem = QStringLiteral("Ш_%1_%2").arg(cam_number(washer.outer_diameter),
