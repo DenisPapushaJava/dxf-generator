@@ -1,0 +1,60 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install development tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build qt6-base-dev libgl1-mesa-dev python3-venv
+      - name: Build and test desktop
+        run: |
+          cmake --preset dev-linux
+          cmake --build --preset dev-linux --parallel 2
+          ctest --preset dev-linux
+      - name: Build and test Qt-free core
+        run: |
+          cmake --preset core-only
+          cmake --build --preset core-only --parallel 2
+          ctest --preset core-only
+      - name: Test PE import audit
+        run: python3 tests/test_pe_audit.py
+      - name: Independent DXF audit (development dependency only)
+        run: |
+          python3 -m venv build/dxf-audit
+          build/dxf-audit/bin/pip install ezdxf==1.4.3
+          build/core-only/dxfgen_fixture build/fixtures
+          build/dxf-audit/bin/python scripts/check_dxf.py build/fixtures
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+      - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
+        with:
+          version: '6.10.3'
+          arch: win64_msvc2022_64
+          archives: qtbase
+          cache: true
+      - name: Build and test Windows desktop (shared Qt, development)
+        run: |
+          cmake --preset dev-windows
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build --preset dev-windows --parallel 2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ctest --preset dev-windows
+          exit $LASTEXITCODE

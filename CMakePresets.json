@@ -1,0 +1,68 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "BUILD_TESTING": "ON" }
+    },
+    {
+      "name": "dev-linux",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release-linux",
+      "inherits": "dev-linux",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "DXFGEN_OPTIMIZE_SIZE": "ON", "DXFGEN_ENABLE_IPO": "ON" }
+    },
+    {
+      "name": "core-only",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DXFGEN_BUILD_DESKTOP": "OFF" }
+    },
+    {
+      "name": "sanitize-linux",
+      "inherits": "core-only",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": { "DXFGEN_SANITIZERS": "ON" }
+    },
+    {
+      "name": "dev-windows",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release-windows-static",
+      "inherits": "dev-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "$env{QT_STATIC_ROOT}",
+        "DXFGEN_SINGLE_EXE": "ON",
+        "DXFGEN_OPTIMIZE_SIZE": "ON",
+        "DXFGEN_ENABLE_IPO": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev-linux", "configurePreset": "dev-linux" },
+    { "name": "release-linux", "configurePreset": "release-linux" },
+    { "name": "core-only", "configurePreset": "core-only" },
+    { "name": "sanitize-linux", "configurePreset": "sanitize-linux" },
+    { "name": "dev-windows", "configurePreset": "dev-windows" },
+    { "name": "release-windows-static", "configurePreset": "release-windows-static" }
+  ],
+  "testPresets": [
+    { "name": "dev-linux", "configurePreset": "dev-linux", "output": { "outputOnFailure": true } },
+    { "name": "release-linux", "configurePreset": "release-linux", "output": { "outputOnFailure": true } },
+    { "name": "core-only", "configurePreset": "core-only", "output": { "outputOnFailure": true } },
+    { "name": "sanitize-linux", "configurePreset": "sanitize-linux", "output": { "outputOnFailure": true } },
+    { "name": "dev-windows", "configurePreset": "dev-windows", "output": { "outputOnFailure": true } },
+    { "name": "release-windows-static", "configurePreset": "release-windows-static", "output": { "outputOnFailure": true } }
+  ]
+}

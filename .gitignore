@@ -1,0 +1,12 @@
+/build/
+/out/
+/.cache/
+/CMakeUserPresets.json
+*.user
+*.user.*
+*.swp
+__pycache__/
+.venv/
+.idea/
+.vscode/
+/design/figma-state.json

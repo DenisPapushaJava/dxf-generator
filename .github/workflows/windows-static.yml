@@ -1,0 +1,61 @@
+name: Windows single EXE (manual)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-exe:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      QT_STATIC_ROOT: ${{ github.workspace }}/build/qt-install
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+      - name: Cache static Qt 6.10.3
+        id: qt-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/qt-install
+          key: qtbase-6.10.3-7ddbc87-msvc2022-x64-static-size-v1
+      - name: Fetch pinned QtBase source (LGPL/GPL/commercial; see docs/licensing.md)
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: qt/qtbase
+          ref: 7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4 # v6.10.3
+          path: build/qt-source
+          persist-credentials: false
+      - name: Build minimal static QtBase
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          mkdir build\qt-build
+          cd build\qt-build
+          call ..\qt-source\configure.bat -prefix "%QT_STATIC_ROOT%" -static -static-runtime -release -optimize-size -opensource -confirm-license -nomake tests -nomake examples -no-opengl -no-feature-vulkan -no-feature-network -no-feature-sql -no-feature-dbus -no-feature-printsupport -no-feature-testlib -no-icu -qt-zlib -qt-pcre -qt-freetype -qt-harfbuzz -qt-libpng -no-libjpeg
+          if errorlevel 1 exit /b 1
+          cmake --build . --parallel 2
+          if errorlevel 1 exit /b 1
+          cmake --install .
+      - name: Build, test and audit single executable
+        shell: pwsh
+        run: |
+          cmake --preset release-windows-static
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build --preset release-windows-static --parallel 2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ctest --preset release-windows-static
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.exe
+          exit $LASTEXITCODE
+      - name: Store internal test artifact (not a public release)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dxf-generator-windows-x64-static-test
+          path: build/release-windows-static/dxf-generator.exe
+          if-no-files-found: error
+          retention-days: 7
