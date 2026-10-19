@@ -10,7 +10,7 @@ import struct
 import sys
 
 SYSTEM_DLLS = set("""
-advapi32.dll avrt.dll bcrypt.dll bcryptprimitives.dll cabinet.dll cfgmgr32.dll
+advapi32.dll authz.dll avrt.dll bcrypt.dll bcryptprimitives.dll cabinet.dll cfgmgr32.dll
 comctl32.dll comdlg32.dll crypt32.dll cryptbase.dll cryptsp.dll d2d1.dll d3d11.dll
 d3d9.dll dcomp.dll dnsapi.dll dwmapi.dll dwrite.dll dxgi.dll dxguid.dll gdi32.dll
 hid.dll imm32.dll iphlpapi.dll kernel32.dll kernelbase.dll mf.dll mfplat.dll

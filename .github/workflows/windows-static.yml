@@ -18,7 +18,7 @@ jobs:
           arch: x64
       - name: Cache static Qt 6.10.3
         id: qt-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/qt-install
           key: qtbase-6.10.3-7ddbc87-msvc2022-x64-static-size-v1
@@ -38,9 +38,15 @@ jobs:
           cd build\qt-build
           call ..\qt-source\configure.bat -prefix "%QT_STATIC_ROOT%" -static -static-runtime -release -optimize-size -opensource -confirm-license -nomake tests -nomake examples -no-opengl -no-feature-vulkan -no-feature-network -no-feature-sql -no-feature-dbus -no-feature-printsupport -no-feature-testlib -no-icu -qt-zlib -qt-pcre -qt-freetype -qt-harfbuzz -qt-libpng -no-libjpeg
           if errorlevel 1 exit /b 1
-          cmake --build . --parallel 2
+          cmake --build . --parallel 4
           if errorlevel 1 exit /b 1
           cmake --install .
+      - name: Save Qt SDK before application checks
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/qt-install
+          key: qtbase-6.10.3-7ddbc87-msvc2022-x64-static-size-v1
       - name: Build, test and audit single executable
         shell: pwsh
         run: |
