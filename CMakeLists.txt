@@ -48,6 +48,8 @@ if(DXFGEN_BUILD_DESKTOP)
         src/desktop/parts_model.cpp src/desktop/parts_model.hpp
         src/desktop/preview_widget.cpp src/desktop/preview_widget.hpp
         src/io/export_service.cpp src/io/export_service.hpp)
+    # Future QObject signals work out of the box; no Qt code generation in the core.
+    set_target_properties(dxf-generator PROPERTIES AUTOMOC ON)
     target_link_libraries(dxf-generator PRIVATE dxfgen_core Qt6::Widgets)
     target_include_directories(dxf-generator PRIVATE src)
     target_compile_definitions(dxf-generator PRIVATE DXFGEN_VERSION="${PROJECT_VERSION}")

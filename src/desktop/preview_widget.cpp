@@ -23,9 +23,10 @@ void PreviewWidget::paintEvent(QPaintEvent*) {
         for (int y = 20; y < height(); y += 20)
             p.drawPoint(x, y);
     p.setPen(QColor("#64748b"));
-    if (!part_ || !validate(*part_).empty()) {
+    const auto errors = part_ ? validate(*part_) : std::vector<ValidationError>{};
+    if (!part_ || !errors.empty()) {
         p.drawText(rect().adjusted(30, 30, -30, -30), Qt::AlignCenter | Qt::TextWordWrap,
-                   part_ ? QStringLiteral("Исправьте размеры, чтобы увидеть контур")
+                   part_ ? QString::fromStdString(errors.front().message)
                          : QStringLiteral("Добавьте или выберите деталь"));
         return;
     }
