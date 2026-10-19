@@ -21,10 +21,13 @@ struct Washer {
 using Shape = std::variant<Rectangle, Circle, Washer>;
 
 struct Part {
+    // Optional Excel column A. Empty means a CAM name built from type and dimensions.
     std::string name;
     Shape shape = Rectangle{};
     int quantity = 1;
     std::optional<double> thickness;
+    // Excel column D for circles: unused geometry, retained for legacy automatic filenames.
+    double circle_filename_width = 0.0;
 };
 
 enum class Field { name, dimension, quantity, thickness };

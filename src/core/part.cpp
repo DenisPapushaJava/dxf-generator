@@ -11,16 +11,20 @@ bool positive(double value) { return std::isfinite(value) && value > 0.0 && valu
 
 std::vector<ValidationError> validate(const Part& part) {
     std::vector<ValidationError> errors;
-    if (part.name.empty() || std::all_of(part.name.begin(), part.name.end(), [](unsigned char c) {
+    if (!part.name.empty() && std::all_of(part.name.begin(), part.name.end(), [](unsigned char c) {
             return c == ' ' || c == '\t' || c == '\r' || c == '\n';
         })) {
-        errors.push_back({Field::name, "Введите название детали"});
+        errors.push_back({Field::name, "Название не должно состоять только из пробелов"});
     }
     if (part.quantity < 1 || part.quantity > 1'000'000)
         errors.push_back({Field::quantity, "Количество: от 1 до 1 000 000"});
     if (part.thickness && !positive(*part.thickness))
         errors.push_back(
             {Field::thickness, "Толщина должна быть больше нуля и не больше 1 000 000 мм"});
+    if (std::holds_alternative<Circle>(part.shape) &&
+        (!std::isfinite(part.circle_filename_width) || part.circle_filename_width < 0 ||
+         part.circle_filename_width > 1'000'000.0))
+        errors.push_back({Field::dimension, "Поле ширины круга для имени: от 0 до 1 000 000 мм"});
     std::visit(
         [&errors](const auto& shape) {
             using T = std::decay_t<decltype(shape)>;

@@ -42,7 +42,7 @@ QDoubleSpinBox* dimension() {
 }
 } // namespace
 MainWindow::MainWindow() {
-    setWindowTitle(QStringLiteral("DXF Generator — новый комплект"));
+    setWindowTitle(QStringLiteral("DXF Generator"));
     resize(1240, 760);
     setMinimumSize(1000, 600);
     auto* central = new QWidget;
@@ -51,7 +51,7 @@ MainWindow::MainWindow() {
     layout->setSpacing(14);
     auto* toolbar = new QHBoxLayout;
     toolbar->addWidget(heading(QStringLiteral("DXF Generator")));
-    auto* subtitle = new QLabel(QStringLiteral("Комплект плоских деталей"));
+    auto* subtitle = new QLabel(QStringLiteral("Плоские детали в DXF"));
     subtitle->setStyleSheet("color: #64748b;");
     toolbar->addWidget(subtitle);
     toolbar->addStretch();
@@ -76,7 +76,7 @@ MainWindow::MainWindow() {
     auto* listPane = new QWidget;
     auto* listLayout = new QVBoxLayout(listPane);
     listLayout->setContentsMargins(0, 0, 0, 0);
-    listLayout->addWidget(heading(QStringLiteral("Детали комплекта")));
+    listLayout->addWidget(heading(QStringLiteral("Детали")));
     model_ = new PartsModel(this);
     table_ = new QTableView;
     table_->setModel(model_);
@@ -109,8 +109,8 @@ MainWindow::MainWindow() {
     form->setRowWrapPolicy(QFormLayout::WrapAllRows);
     form->setVerticalSpacing(10);
     name_ = new QLineEdit;
-    name_->setMaxLength(160);
-    form->addRow(QStringLiteral("&Название"), name_);
+    name_->setPlaceholderText(QStringLiteral("По форме и размерам"));
+    form->addRow(QStringLiteral("&Название (необязательно)"), name_);
     shape_ = new QComboBox;
     shape_->addItems(
         {QStringLiteral("Прямоугольник"), QStringLiteral("Круг"), QStringLiteral("Шайба")});
@@ -136,6 +136,13 @@ MainWindow::MainWindow() {
     validation_->setStyleSheet("color: #b45309;");
     validation_->setAccessibleName(QStringLiteral("Результат проверки детали"));
     editLayout->addWidget(validation_);
+    filename_ = new QLabel;
+    filename_->setWordWrap(true);
+    filename_->setTextFormat(Qt::PlainText);
+    filename_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    filename_->setAccessibleName(QStringLiteral("Имя DXF для CAM"));
+    filename_->setToolTip(QStringLiteral("Повторы позиций получат (1), (2) перед .dxf"));
+    editLayout->addWidget(filename_);
     editLayout->addStretch();
     auto* hint = new QLabel(QStringLiteral(
         "Один DXF на позицию. Количество и толщина попадут в имя файла; в DXF — только контуры."));
@@ -155,8 +162,9 @@ MainWindow::MainWindow() {
     export_->setMinimumHeight(36);
     export_->setStyleSheet("QPushButton { background: #2563eb; color: white; padding: 6px 20px; "
                            "border-radius: 4px; } QPushButton:disabled { background: #94a3b8; }");
-    export_->setToolTip(QStringLiteral(
-        "Выбрать папку и сохранить отмеченные позиции. Совпадающие имена получат суффикс."));
+    export_->setToolTip(
+        QStringLiteral("Выбрать папку и сохранить отмеченные позиции. Повторы получат (1), (2). "
+                       "Существующие файлы остановят экспорт."));
     footer->addWidget(export_);
     layout->addLayout(footer);
     setCentralWidget(central);
@@ -202,6 +210,7 @@ void MainWindow::loadSelection() {
     preview_->setPart(value);
     if (!value) {
         validation_->clear();
+        filename_->clear();
         return;
     }
     loading_ = true;
@@ -228,17 +237,19 @@ void MainWindow::loadSelection() {
     }
     thickness_->setValue(value->thickness.value_or(0.0));
     quantity_->setValue(value->quantity);
-    const auto errors = validate(*value);
-    validation_->setText(errors.empty() ? QStringLiteral("✓ Размеры корректны")
-                                        : QString::fromStdString(errors.front().message));
-    validation_->setStyleSheet(errors.empty() ? "color: #15803d;" : "color: #b45309;");
+    const auto filename = cam_file_name(*value);
+    validation_->setText(filename.error.isEmpty() ? QStringLiteral("✓ Деталь готова к экспорту")
+                                                  : filename.error);
+    validation_->setStyleSheet(filename.error.isEmpty() ? "color: #15803d;" : "color: #b45309;");
+    filename_->setText(filename.name.isEmpty() ? QString{}
+                                               : QStringLiteral("Имя DXF:\n%1").arg(filename.name));
     loading_ = false;
 }
 void MainWindow::updatePart() {
     if (loading_ || !model_->part(currentRow()))
         return;
     Part value = *model_->part(currentRow());
-    value.name = name_->text().trimmed().toStdString();
+    value.name = name_->text().toStdString();
     value.quantity = quantity_->value();
     value.thickness =
         thickness_->value() > 0 ? std::optional<double>(thickness_->value()) : std::nullopt;
@@ -251,17 +262,19 @@ void MainWindow::updatePart() {
     model_->update(currentRow(), value);
     dirty_ = true;
     preview_->setPart(&value);
-    const auto errors = validate(value);
-    validation_->setText(errors.empty() ? QStringLiteral("✓ Размеры корректны")
-                                        : QString::fromStdString(errors.front().message));
-    validation_->setStyleSheet(errors.empty() ? "color: #15803d;" : "color: #b45309;");
+    const auto filename = cam_file_name(value);
+    validation_->setText(filename.error.isEmpty() ? QStringLiteral("✓ Деталь готова к экспорту")
+                                                  : filename.error);
+    validation_->setStyleSheet(filename.error.isEmpty() ? "color: #15803d;" : "color: #b45309;");
+    filename_->setText(filename.name.isEmpty() ? QString{}
+                                               : QStringLiteral("Имя DXF:\n%1").arg(filename.name));
 }
 void MainWindow::refreshSummary() {
     const auto included = model_->included();
     int invalid = 0;
     qint64 count = 0;
     for (const auto& part : included) {
-        if (!validate(part).empty())
+        if (!cam_file_name(part).error.isEmpty())
             ++invalid;
         count += part.quantity;
     }
@@ -289,8 +302,8 @@ void MainWindow::exportFiles() {
 }
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (dirty_ && QMessageBox::question(
-                      this, QStringLiteral("Закрыть комплект?"),
-                      QStringLiteral("Параметры комплекта хранятся только в памяти. Закрыть окно? "
+                      this, QStringLiteral("Закрыть окно?"),
+                      QStringLiteral("Список деталей хранится только в памяти. Закрыть окно? "
                                      "Экспортированные DXF останутся в выбранной папке."),
                       QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
         event->ignore();

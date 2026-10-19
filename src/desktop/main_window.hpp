@@ -38,6 +38,7 @@ class MainWindow final : public QMainWindow {
     QLabel* firstLabel_;
     QLabel* secondLabel_;
     QLabel* validation_;
+    QLabel* filename_;
     QLabel* summary_;
     QPushButton* export_;
     QPushButton* remove_;

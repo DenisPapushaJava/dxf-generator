@@ -57,6 +57,14 @@ void check() {
     circle.thickness = -3;
     require(!validate(circle).empty(), "negative metadata thickness accepted");
     circle.thickness.reset();
+    circle.name.clear();
+    require(validate(circle).empty(), "empty name must allow automatic CAM filename");
+    circle.circle_filename_width = 12.5;
+    require(write_dxf(circle) == write_dxf(Part{"disc", Circle{20.5}, 1, {}}),
+            "legacy filename width must not change circle geometry");
+    circle.circle_filename_width = -1;
+    require(!validate(circle).empty(), "invalid filename width accepted");
+    circle.circle_filename_width = 0;
     circle.name = " \t";
     require(!validate(circle).empty(), "blank name accepted");
     const auto previous = std::locale();

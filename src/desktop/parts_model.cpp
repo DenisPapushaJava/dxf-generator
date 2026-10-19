@@ -1,4 +1,5 @@
 #include "desktop/parts_model.hpp"
+#include "io/export_service.hpp"
 
 #include <QBrush>
 #include <QColor>
@@ -15,16 +16,16 @@ QVariant PartsModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || !part(index.row()))
         return {};
     const auto& row = rows_[static_cast<std::size_t>(index.row())];
-    const auto errors = validate(row.part);
+    const auto filename = cam_file_name(row.part);
     if (role == Qt::CheckStateRole && index.column() == 0)
         return row.included ? Qt::Checked : Qt::Unchecked;
-    if (role == Qt::ForegroundRole && !errors.empty())
+    if (role == Qt::ForegroundRole && !filename.error.isEmpty())
         return QBrush(QColor("#b45309"));
-    if (role == Qt::ToolTipRole && !errors.empty())
-        return QString::fromStdString(errors.front().message);
+    if (role == Qt::ToolTipRole)
+        return filename.error.isEmpty() ? filename.name : filename.error;
     if (role == Qt::AccessibleTextRole || role == Qt::DisplayRole) {
         if (index.column() == 0)
-            return QString::fromStdString(row.part.name);
+            return row.part.name.empty() ? filename.name : QString::fromStdString(row.part.name);
         if (index.column() == 1)
             return QString::fromUtf8(shape_name(row.part.shape));
         if (index.column() == 2)

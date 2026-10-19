@@ -7,23 +7,56 @@
 #include <QSet>
 
 namespace dxfgen {
-QString safe_file_stem(QString name) {
-    name = name.normalized(QString::NormalizationForm_C).trimmed();
-    name.replace(QRegularExpression(QStringLiteral("[<>:\"/\\\\|?*\\x{0000}-\\x{001f}]")), "_");
-    name = name.left(80);
-    if (!name.isEmpty() && name.at(name.size() - 1).isHighSurrogate())
-        name.chop(1);
-    while (name.endsWith('.') || name.endsWith(' '))
-        name.chop(1);
-    if (name.isEmpty())
-        name = QStringLiteral("Деталь");
+namespace {
+QString cam_number(double value) {
+    // .NET Framework Double's default general format used 15 significant digits.
+    // QString::number is locale independent; upper-case exponent matches legacy G format.
+    return QString::number(value, 'G', 15).replace('.', ',');
+}
+QString filename_error(const QString& name) {
+    static const QRegularExpression forbidden(QStringLiteral("[<>:\"/\\\\|?*\\x{0000}-\\x{001f}]"));
+    if (forbidden.match(name).hasMatch())
+        return QStringLiteral("Имя DXF содержит запрещённый Windows символ: %1").arg(name);
+    if (name.size() > 255)
+        return QStringLiteral("Имя DXF длиннее 255 символов: %1").arg(name);
     const QString base = name.section('.', 0, 0).trimmed();
     static const QRegularExpression reserved(
         QStringLiteral("^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]|CONIN\\$|CONOUT\\$)$"),
         QRegularExpression::CaseInsensitiveOption);
     if (reserved.match(base).hasMatch())
-        name.prepend('_');
-    return name;
+        return QStringLiteral("Имя DXF зарезервировано Windows: %1").arg(name);
+    return {};
+}
+QString path_key(const QString& name) {
+    return name.normalized(QString::NormalizationForm_C).toCaseFolded();
+}
+} // namespace
+
+FileNameResult cam_file_name(const Part& part) {
+    const auto errors = validate(part);
+    if (!errors.empty())
+        return {{}, QString::fromStdString(errors.front().message)};
+    QString stem = QString::fromStdString(part.name);
+    if (!stem.isEmpty() && stem.trimmed().isEmpty())
+        return {{}, QStringLiteral("Название не должно состоять только из пробелов")};
+    if (stem.isEmpty()) {
+        if (const auto* rectangle = std::get_if<Rectangle>(&part.shape))
+            stem = QStringLiteral("П_%1_%2").arg(cam_number(rectangle->width),
+                                                 cam_number(rectangle->height));
+        else if (const auto* circle = std::get_if<Circle>(&part.shape))
+            stem = QStringLiteral("К_%1_%2").arg(cam_number(circle->diameter),
+                                                 cam_number(part.circle_filename_width));
+        else {
+            const auto& washer = std::get<Washer>(part.shape);
+            stem = QStringLiteral("Ш_%1_%2").arg(cam_number(washer.outer_diameter),
+                                                 cam_number(washer.inner_diameter));
+        }
+    }
+    if (part.thickness)
+        stem += '_' + cam_number(*part.thickness) + QStringLiteral("мм");
+    stem += '_' + QString::number(part.quantity) + QStringLiteral("шт.dxf");
+    const auto error = filename_error(stem);
+    return error.isEmpty() ? FileNameResult{stem, {}} : FileNameResult{{}, error};
 }
 
 ExportResult export_parts(const QString& directory, const std::vector<Part>& parts) {
@@ -42,26 +75,35 @@ ExportResult export_parts(const QString& directory, const std::vector<Part>& par
         QByteArray bytes;
     };
     std::vector<Item> plan;
-    QSet<QString> occupied;
+    QSet<QString> existing;
+    QSet<QString> planned;
     for (const QString& name :
          dir.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot))
-        occupied.insert(name.normalized(QString::NormalizationForm_C).toCaseFolded());
+        existing.insert(path_key(name));
     for (const auto& part : parts) {
-        const auto errors = validate(part);
-        if (!errors.empty()) {
-            result.error = QString::fromStdString(part.name) + ": " +
-                           QString::fromStdString(errors.front().message);
+        const auto filename = cam_file_name(part);
+        if (!filename.error.isEmpty()) {
+            result.error = QStringLiteral("Позиция %1: %2")
+                               .arg(static_cast<qulonglong>(plan.size() + 1))
+                               .arg(filename.error);
             return result;
         }
-        QString stem = safe_file_stem(QString::fromStdString(part.name));
-        if (part.thickness)
-            stem += '_' + QString::number(*part.thickness, 'g', 12) + QStringLiteral("мм");
-        stem += '_' + QString::number(part.quantity) + QStringLiteral("шт");
-        QString name = stem + ".dxf";
-        int suffix = 2;
-        while (occupied.contains(name.toCaseFolded()))
-            name = stem + '_' + QString::number(suffix++) + ".dxf";
-        occupied.insert(name.toCaseFolded());
+        const QString stem = filename.name.chopped(4);
+        QString name = filename.name;
+        int suffix = 1;
+        while (planned.contains(path_key(name)))
+            name = stem + '(' + QString::number(suffix++) + ").dxf";
+        if (const auto error = filename_error(name); !error.isEmpty()) {
+            result.error = error;
+            return result;
+        }
+        if (existing.contains(path_key(name))) {
+            result.error = QStringLiteral("Файл или папка уже существует: %1\n"
+                                          "Выберите другую папку экспорта.")
+                               .arg(dir.absoluteFilePath(name));
+            return result;
+        }
+        planned.insert(path_key(name));
         plan.push_back({dir.absoluteFilePath(name), QByteArray::fromStdString(write_dxf(part))});
     }
     for (const auto& item : plan) {
