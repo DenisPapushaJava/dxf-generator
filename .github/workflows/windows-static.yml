@@ -52,7 +52,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.exe
           exit $LASTEXITCODE
-      - name: Store internal test artifact (not a public release)
+      - name: Store test artifact (not a GitHub Release)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dxf-generator-windows-x64-static-test
