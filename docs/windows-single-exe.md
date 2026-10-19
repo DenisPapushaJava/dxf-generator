@@ -37,3 +37,16 @@ python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.
 Архитектура не содержит Windows-специфичной бизнес-логики. MinGW поддерживается настройками runtime, но готовый кросс-SDK в репозиторий не входит. Для него необходимы статический Windows Qt и host tools **той же версии Qt**, toolchain-файл и отдельный build directory. Смешивать Linux Qt 6.4 host tools и Windows Qt 6.10 не следует. Поддерживаемый воспроизводимый путь в этом каркасе — Windows CI.
 
 Справка: [Qt static plugins](https://doc.qt.io/qt-6.10/plugins-howto.html), [qt_import_plugins](https://doc.qt.io/qt-6/qt-import-plugins.html), [Qt configure options](https://doc.qt.io/qt-6.10/configure-options.html).
+
+## Проверенный тестовый артефакт
+
+2026-10-19, [Actions run 39313650753](https://github.com/DenisPapushaJava/dxf-generator/actions/runs/39313650753), исходники приложения `36030b4`:
+
+- MSVC 19.44 x64, статический QtBase 6.10.3 и статический C++ runtime.
+- Один `dxf-generator.exe`: **17 048 064 байта**, 16,2583 МиБ; без UPX и самораспаковки.
+- CTest: 3/3 (запуск окна, защита файлов при экспорте, геометрия/DXF).
+- PE-аудит: только системные DLL, включая проверку delay imports; лимит 20 МиБ пройден.
+- В PE встроены иконка, сведения о версии и manifest. Рядом не нужны Qt DLL, runtime компилятора, `platforms/`, шрифты или настройки.
+- SHA-256: `11328dba2a3c01cb075cc5e3591d6486633cc45192d9436ffdb62d4bb87b3c8f`.
+
+Это подтверждение сборки и запуска на Windows CI. Ручная проверка чистых Windows 10/11, разных DPI и целевой CAD/CAM остаётся отдельным этапом перед пользовательским релизом.
