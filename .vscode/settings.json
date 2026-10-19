@@ -1,0 +1,7 @@
+{
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": false,
+  "cmake.options.statusBarVisibility": "compact",
+  "C_Cpp.debugShortcut": false,
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/dev-linux/compile_commands.json"
+}

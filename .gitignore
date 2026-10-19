@@ -8,5 +8,9 @@
 __pycache__/
 .venv/
 .idea/
-.vscode/
+/.vscode/*
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+!/.vscode/extensions.json
 /design/figma-state.json

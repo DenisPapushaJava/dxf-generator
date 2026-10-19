@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "DXF: configure (Debug)",
+      "type": "process",
+      "command": "cmake",
+      "args": ["--preset", "dev-linux"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared", "showReuseMessage": false }
+    },
+    {
+      "label": "DXF: build (Debug)",
+      "type": "process",
+      "command": "cmake",
+      "args": ["--build", "--preset", "dev-linux", "--parallel", "4"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": "DXF: configure (Debug)",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"],
+      "presentation": { "reveal": "silent", "panel": "shared", "showReuseMessage": false }
+    },
+    {
+      "label": "DXF: run",
+      "type": "process",
+      "command": "${workspaceFolder}/build/dev-linux/dxf-generator",
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": "DXF: build (Debug)",
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "dedicated", "showReuseMessage": false }
+    },
+    {
+      "label": "DXF: test",
+      "type": "process",
+      "command": "ctest",
+      "args": ["--preset", "dev-linux"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": "DXF: build (Debug)",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "showReuseMessage": false }
+    }
+  ]
+}
