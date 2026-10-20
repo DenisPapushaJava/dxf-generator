@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install development tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build qt6-base-dev libgl1-mesa-dev python3-venv
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build qt6-base-dev qt6-base-private-dev libgl1-mesa-dev python3-venv
       - name: Build and test desktop
         run: |
           cmake --preset dev-linux

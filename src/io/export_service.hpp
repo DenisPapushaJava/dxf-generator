@@ -17,6 +17,8 @@ struct FileNameResult {
 
 // CAM contract: Cyrillic units, comma decimals, circle diameter only, no hidden name changes.
 [[nodiscard]] FileNameResult cam_file_name(const Part& part);
+// Same ordered names for table preview and export, including duplicate suffixes.
+[[nodiscard]] std::vector<FileNameResult> plan_file_names(const std::vector<Part>& parts);
 // Validates the complete batch before creating files; existing files are never overwritten.
 // Duplicate batch positions use (1), (2); an existing destination rejects the batch.
 // A disk error can leave earlier files from the batch; files lists those completed writes.

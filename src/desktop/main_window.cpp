@@ -1,284 +1,367 @@
 #include "desktop/main_window.hpp"
+#include "desktop/excel_help.hpp"
+#include "desktop/part_dialog.hpp"
+#include "desktop/parts_delegate.hpp"
+#include "desktop/parts_gallery.hpp"
 #include "desktop/parts_model.hpp"
 #include "desktop/preview_widget.hpp"
+#include "desktop/text_import_dialog.hpp"
+#include "io/excel_import.hpp"
 #include "io/export_service.hpp"
+#include "io/list_import.hpp"
 
+#include <QApplication>
 #include <QCloseEvent>
-#include <QComboBox>
 #include <QDir>
-#include <QDoubleSpinBox>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFileDialog>
-#include <QFormLayout>
+#include <QFileInfo>
+#include <QFrame>
 #include <QHeaderView>
+#include <QKeySequence>
 #include <QLabel>
-#include <QMenu>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPushButton>
-#include <QSpinBox>
+#include <QResizeEvent>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTableView>
+#include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <algorithm>
 
 namespace dxfgen {
 namespace {
-QLabel* heading(const QString& text) {
-    auto* label = new QLabel(text);
-    auto font = label->font();
-    font.setPointSize(font.pointSize() + 2);
-    font.setBold(true);
-    label->setFont(font);
-    return label;
-}
-QDoubleSpinBox* dimension() {
-    auto* input = new QDoubleSpinBox;
-    input->setRange(0.0, 1'000'000.0);
-    input->setDecimals(3);
-    input->setSuffix(QStringLiteral(" мм"));
-    input->setKeyboardTracking(false);
-    return input;
+QLabel* label(const QString& text = {}) {
+    auto* result = new QLabel(text);
+    result->setTextFormat(Qt::PlainText);
+    result->setWordWrap(true);
+    return result;
 }
 } // namespace
 MainWindow::MainWindow() {
-    setWindowTitle(QStringLiteral("DXF Generator"));
-    resize(1240, 760);
-    setMinimumSize(1000, 600);
+    setWindowTitle(QStringLiteral("DXF Generator[*]"));
+    setAcceptDrops(true);
+    resize(1440, 800);
+    setMinimumSize(1100, 620);
     auto* central = new QWidget;
     auto* layout = new QVBoxLayout(central);
     layout->setContentsMargins(16, 16, 16, 12);
-    layout->setSpacing(14);
+    layout->setSpacing(12);
     auto* toolbar = new QHBoxLayout;
-    toolbar->addWidget(heading(QStringLiteral("DXF Generator")));
-    auto* subtitle = new QLabel(QStringLiteral("Плоские детали в DXF"));
-    subtitle->setStyleSheet("color: #64748b;");
-    toolbar->addWidget(subtitle);
+    auto* title = label(QStringLiteral("DXF Generator"));
+    title->setStyleSheet("font-size: 18px; font-weight: bold;");
+    toolbar->addWidget(title);
     toolbar->addStretch();
-    auto* add = new QPushButton(QStringLiteral("&Добавить деталь"));
-    auto* menu = new QMenu(add);
-    for (int i = 0; i < 3; ++i) {
-        const Shape value = i == 0   ? Shape(Rectangle{})
-                            : i == 1 ? Shape(Circle{})
-                                     : Shape(Washer{});
-        auto* action = menu->addAction(QString::fromUtf8(shape_name(value)));
-        connect(action, &QAction::triggered, this, [this, value] {
-            table_->selectRow(model_->add(value));
-            dirty_ = true;
-            refreshSummary();
+    auto* manual = new QPushButton(QStringLiteral("Создать &вручную…"));
+    manual->setObjectName(QStringLiteral("manualButton"));
+    toolbar->addWidget(manual);
+    auto* open = new QPushButton(QStringLiteral("&Открыть Excel…"));
+    open->setObjectName(QStringLiteral("openExcelButton"));
+    open->setToolTip(
+        QStringLiteral("Открыть Excel (.xlsx) или текстовую таблицу CSV / TSV / TXT (Ctrl+O)"));
+    open->setShortcut(QKeySequence::Open);
+    open->setMinimumHeight(34);
+    open->setStyleSheet(
+        "background: #2563eb; color: white; padding: 6px 18px; border-radius: 4px;");
+    toolbar->addWidget(open);
+    auto* help = new QPushButton(QStringLiteral("?"));
+    help->setObjectName(QStringLiteral("helpButton"));
+    help->setAccessibleName(QStringLiteral("Справка, шаблон Excel и обновления"));
+    help->setToolTip(QStringLiteral("Справка, шаблон Excel и обновления (F1)"));
+    help->setShortcut(QKeySequence::HelpContents);
+    help->setFixedSize(34, 34);
+    toolbar->addWidget(help);
+    connect(help, &QPushButton::clicked, this, [this] {
+        show_excel_help(this, [this] {
+            finishTableEdit();
+            return discardChanges();
         });
-    }
-    add->setMenu(menu);
-    toolbar->addWidget(add);
+    });
     layout->addLayout(toolbar);
+    source_ = label();
+    source_->setObjectName(QStringLiteral("sourceLabel"));
+    source_->hide();
+    layout->addWidget(source_);
     auto* splitter = new QSplitter;
     splitter->setChildrenCollapsible(false);
-    auto* listPane = new QWidget;
-    auto* listLayout = new QVBoxLayout(listPane);
-    listLayout->setContentsMargins(0, 0, 0, 0);
-    listLayout->addWidget(heading(QStringLiteral("Детали")));
+    auto* list_pane = new QWidget;
+    auto* list_layout = new QVBoxLayout(list_pane);
+    list_layout->setContentsMargins(0, 0, 0, 0);
+    auto* list_toolbar = new QHBoxLayout;
+    list_toolbar->addWidget(label(QStringLiteral("Детали")));
+    list_toolbar->addStretch();
+    auto* ready = new QPushButton(QStringLiteral("Выбрать &готовые"));
+    ready->setObjectName(QStringLiteral("selectReadyButton"));
+    ready->setToolTip(
+        QStringLiteral("Выбрать только строки без ошибок. Остальные останутся видны в таблице."));
+    list_toolbar->addWidget(ready);
+    list_layout->addLayout(list_toolbar);
     model_ = new PartsModel(this);
     table_ = new QTableView;
+    table_->setObjectName(QStringLiteral("partsTable"));
     table_->setModel(model_);
-    table_->setAccessibleName(QStringLiteral("Список деталей. Флажок включает деталь в экспорт"));
+    table_->setItemDelegate(new PartsDelegate(table_));
+    table_->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed |
+                            QAbstractItemView::AnyKeyPressed);
+    table_->setTabKeyNavigation(true);
+    table_->setAcceptDrops(false);
+    table_->viewport()->setAcceptDrops(false);
+    table_->setAccessibleName(
+        QStringLiteral("Редактируемые строки списка. Двойной щелчок или F2 — изменить параметры. "
+                       "Флажок выбирает строку для экспорта."));
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->setShowGrid(false);
     table_->setAlternatingRowColors(true);
+    table_->setWordWrap(false);
     table_->verticalHeader()->hide();
-    table_->verticalHeader()->setDefaultSectionSize(40);
-    table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    listLayout->addWidget(table_);
-    remove_ = new QPushButton(QStringLiteral("&Удалить выбранную"));
-    listLayout->addWidget(remove_);
-    splitter->addWidget(listPane);
-    auto* previewPane = new QWidget;
-    auto* previewLayout = new QVBoxLayout(previewPane);
-    previewLayout->setContentsMargins(0, 0, 0, 0);
-    previewLayout->addWidget(heading(QStringLiteral("Предпросмотр")));
-    preview_ = new PreviewWidget;
-    previewLayout->addWidget(preview_, 1);
-    splitter->addWidget(previewPane);
-    editor_ = new QWidget;
-    auto* editLayout = new QVBoxLayout(editor_);
-    editLayout->setContentsMargins(8, 0, 0, 0);
-    editLayout->addWidget(heading(QStringLiteral("Параметры детали")));
-    auto* form = new QFormLayout;
-    form->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    form->setVerticalSpacing(10);
-    shape_ = new QComboBox;
-    shape_->addItems(
-        {QStringLiteral("Прямоугольник"), QStringLiteral("Круг"), QStringLiteral("Шайба")});
-    form->addRow(QStringLiteral("&Форма"), shape_);
-    first_ = dimension();
-    second_ = dimension();
-    firstLabel_ = new QLabel;
-    firstLabel_->setBuddy(first_);
-    secondLabel_ = new QLabel;
-    secondLabel_->setBuddy(second_);
-    form->addRow(firstLabel_, first_);
-    form->addRow(secondLabel_, second_);
-    thickness_ = dimension();
-    thickness_->setSpecialValueText(QStringLiteral("Не указана"));
-    form->addRow(QStringLiteral("&Толщина (для имени файла)"), thickness_);
-    quantity_ = new QSpinBox;
-    quantity_->setRange(1, 1'000'000);
-    quantity_->setKeyboardTracking(false);
-    form->addRow(QStringLiteral("&Количество, шт."), quantity_);
-    editLayout->addLayout(form);
-    validation_ = new QLabel;
-    validation_->setWordWrap(true);
-    validation_->setStyleSheet("color: #b45309;");
-    validation_->setAccessibleName(QStringLiteral("Результат проверки детали"));
-    editLayout->addWidget(validation_);
-    filename_ = new QLabel;
-    filename_->setWordWrap(true);
-    filename_->setTextFormat(Qt::PlainText);
-    filename_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
-    filename_->setAccessibleName(QStringLiteral("Имя DXF для CAM"));
-    filename_->setToolTip(QStringLiteral("Повторы позиций получат (1), (2) перед .dxf"));
-    editLayout->addWidget(filename_);
-    editLayout->addStretch();
-    auto* hint = new QLabel(QStringLiteral(
-        "Один DXF на позицию. Количество и толщина попадут в имя файла; в DXF — только контуры."));
-    hint->setWordWrap(true);
+    table_->verticalHeader()->setDefaultSectionSize(36);
+    const int widths[] = {65, 105, 125, 80, 110, 70, 65, 230, 150};
+    for (int column = 0; column < PartsModel::columns; ++column)
+        table_->setColumnWidth(column, widths[column]);
+    table_->horizontalHeader()->setStretchLastSection(true);
+    list_layout->addWidget(table_, 1);
+    auto* row_toolbar = new QHBoxLayout;
+    remove_ = new QPushButton(QStringLiteral("Удалить ручную"));
+    row_toolbar->addWidget(remove_);
+    row_toolbar->addStretch();
+    auto* hint = label(QStringLiteral(
+        "Двойной щелчок / F2 — изменить · Enter / Tab — применить. Исходный файл не изменяется."));
     hint->setStyleSheet("color: #64748b;");
-    editLayout->addWidget(hint);
-    editor_->setMinimumWidth(230);
-    splitter->addWidget(editor_);
-    splitter->setSizes({340, 580, 270});
-    splitter->setStretchFactor(1, 1);
+    row_toolbar->addWidget(hint, 1);
+    list_layout->addLayout(row_toolbar);
+    splitter->addWidget(list_pane);
+    auto* preview_pane = new QWidget;
+    auto* preview_layout = new QVBoxLayout(preview_pane);
+    preview_layout->setContentsMargins(4, 0, 0, 0);
+    auto* preview_toolbar = new QHBoxLayout;
+    preview_toolbar->addWidget(label(QStringLiteral("Предпросмотр")), 1);
+    gallery_ = new QPushButton(QStringLiteral("Все детали…"));
+    gallery_->setObjectName(QStringLiteral("partsGalleryButton"));
+    gallery_->setToolTip(QStringLiteral("Открыть галерею всех деталей из списка"));
+    preview_toolbar->addWidget(gallery_);
+    preview_layout->addLayout(preview_toolbar);
+    preview_ = new PreviewWidget;
+    preview_->setMaximumHeight(300);
+    preview_layout->addWidget(preview_);
+    connect(gallery_, &QPushButton::clicked, this, [this] {
+        finishTableEdit();
+        const int row = show_parts_gallery(this, *model_, currentRow());
+        if (row >= 0) {
+            table_->selectRow(row);
+            table_->scrollTo(model_->index(row, PartsModel::source));
+            table_->setFocus();
+        }
+    });
+    details_ = label(QStringLiteral("Выберите строку таблицы."));
+    details_->setObjectName(QStringLiteral("detailsLabel"));
+    details_->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    preview_layout->addWidget(details_);
+    validation_ = label();
+    validation_->setObjectName(QStringLiteral("validationLabel"));
+    validation_->setAccessibleName(QStringLiteral("Ошибки выбранной строки"));
+    preview_layout->addWidget(validation_);
+    preview_layout->addStretch();
+    preview_pane->setMinimumWidth(preview_->minimumWidth() +
+                                  preview_layout->contentsMargins().left() +
+                                  preview_layout->contentsMargins().right());
+    splitter->addWidget(preview_pane);
+    splitter->setSizes({1080, 300});
+    splitter->setStretchFactor(0, 1);
     layout->addWidget(splitter, 1);
     auto* footer = new QHBoxLayout;
-    summary_ = new QLabel;
-    footer->addWidget(summary_);
-    footer->addStretch();
-    export_ = new QPushButton(QStringLiteral("&Экспорт DXF…"));
-    export_->setMinimumHeight(36);
-    export_->setStyleSheet("QPushButton { background: #2563eb; color: white; padding: 6px 20px; "
-                           "border-radius: 4px; } QPushButton:disabled { background: #94a3b8; }");
-    export_->setToolTip(
-        QStringLiteral("Выбрать папку и сохранить отмеченные позиции. Повторы получат (1), (2). "
-                       "Существующие файлы остановят экспорт."));
+    summary_ = label();
+    summary_->setObjectName(QStringLiteral("summaryLabel"));
+    footer->addWidget(summary_, 1);
+    export_ = new QPushButton(QStringLiteral("&Экспортировать DXF…"));
+    export_->setObjectName(QStringLiteral("exportButton"));
+    export_->setMinimumHeight(38);
+    export_->setStyleSheet(
+        "QPushButton { background: #2563eb; color: white; padding: 6px 20px; border-radius: 4px; } "
+        "QPushButton:disabled { background: #94a3b8; }");
+    export_->setToolTip(QStringLiteral("Выбрать папку и сохранить отмеченные строки. "
+                                       "Существующие файлы не перезаписываются."));
     footer->addWidget(export_);
     layout->addLayout(footer);
     setCentralWidget(central);
     statusBar()->showMessage(
-        QStringLiteral("Прототип %1 · данные хранятся в памяти до закрытия").arg(DXFGEN_VERSION));
-    connect(table_->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
-            [this] { loadSelection(); });
-    connect(model_, &QAbstractItemModel::dataChanged, this, [this] { refreshSummary(); });
+        QStringLiteral(".xlsx / .csv / .tsv → DXF в папку · размеры в миллиметрах"));
+    drop_overlay_ = new QFrame(this);
+    drop_overlay_->setObjectName(QStringLiteral("dropOverlay"));
+    drop_overlay_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    drop_overlay_->setFocusPolicy(Qt::NoFocus);
+    auto* overlay_layout = new QVBoxLayout(drop_overlay_);
+    overlay_layout->setContentsMargins(40, 40, 40, 40);
+    overlay_layout->addStretch();
+    drop_title_ = label();
+    drop_title_->setAlignment(Qt::AlignCenter);
+    drop_title_->setStyleSheet("font-size: 26px; font-weight: bold; border: none;");
+    overlay_layout->addWidget(drop_title_);
+    drop_message_ = label();
+    drop_message_->setObjectName(QStringLiteral("dropMessage"));
+    drop_message_->setAlignment(Qt::AlignCenter);
+    drop_message_->setStyleSheet("font-size: 16px; border: none;");
+    overlay_layout->addWidget(drop_message_);
+    overlay_layout->addStretch();
+    drop_overlay_->hide();
+    drop_timer_ = new QTimer(this);
+    drop_timer_->setSingleShot(true);
+    connect(drop_timer_, &QTimer::timeout, this, &MainWindow::clearDrop);
+    // All child surfaces, including the table viewport and selectable labels, route
+    // file drags to this window. The overlay never becomes a separate drop target.
+    for (auto* child : findChildren<QWidget*>())
+        child->setAcceptDrops(false);
+    connect(open, &QPushButton::clicked, this, [this] {
+        const auto path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("Открыть список деталей"), {},
+            QStringLiteral("Списки деталей (*.xlsx *.csv *.tsv *.txt);;Книга Excel "
+                           "(*.xlsx);;Текстовая таблица (*.csv *.tsv *.txt);;Все файлы (*)"));
+        if (!path.isEmpty())
+            loadExcel(path);
+    });
+    connect(manual, &QPushButton::clicked, this, &MainWindow::createManual);
     connect(remove_, &QPushButton::clicked, this, [this] {
         const int row = currentRow();
+        if (model_->sourceRow(row) != 0)
+            return;
         model_->remove(row);
-        dirty_ = true;
         if (model_->rowCount())
             table_->selectRow(std::min(row, model_->rowCount() - 1));
-        else
-            loadSelection();
         refreshSummary();
-    });
-    connect(shape_, &QComboBox::currentIndexChanged, this, [this] {
-        if (loading_ || !model_->part(currentRow()))
-            return;
-        Part value = *model_->part(currentRow());
-        value.shape = shape_->currentIndex() == 0   ? Shape(Rectangle{})
-                      : shape_->currentIndex() == 1 ? Shape(Circle{})
-                                                    : Shape(Washer{});
-        model_->update(currentRow(), std::move(value));
-        dirty_ = true;
         loadSelection();
     });
-    for (auto* input : {first_, second_, thickness_})
-        connect(input, &QDoubleSpinBox::valueChanged, this, [this] { updatePart(); });
-    connect(quantity_, &QSpinBox::valueChanged, this, [this] { updatePart(); });
+    connect(ready, &QPushButton::clicked, model_, &PartsModel::selectReady);
+    connect(table_->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
+            [this] { loadSelection(); });
+    connect(model_, &QAbstractItemModel::dataChanged, this, [this] {
+        refreshSummary();
+        loadSelection();
+    });
     connect(export_, &QPushButton::clicked, this, [this] { exportFiles(); });
-    table_->selectRow(0);
     refreshSummary();
+    loadSelection();
 }
 int MainWindow::currentRow() const { return table_->currentIndex().row(); }
-void MainWindow::loadSelection() {
-    const auto* value = model_->part(currentRow());
-    editor_->setEnabled(value != nullptr);
-    remove_->setEnabled(value != nullptr);
-    preview_->setPart(value);
-    if (!value) {
-        validation_->clear();
-        filename_->clear();
-        return;
-    }
-    loading_ = true;
-    shape_->setCurrentIndex(static_cast<int>(value->shape.index()));
-    const bool rectangle = std::holds_alternative<Rectangle>(value->shape);
-    const bool washer = std::holds_alternative<Washer>(value->shape);
-    firstLabel_->setText(rectangle ? QStringLiteral("&Длина")
-                         : washer  ? QStringLiteral("&Наружный диаметр")
-                                   : QStringLiteral("&Диаметр"));
-    secondLabel_->setText(rectangle ? QStringLiteral("&Ширина")
-                                    : QStringLiteral("&Внутренний диаметр"));
-    second_->setVisible(rectangle || washer);
-    secondLabel_->setVisible(rectangle || washer);
-    if (const auto* plate = std::get_if<Rectangle>(&value->shape)) {
-        first_->setValue(plate->width);
-        second_->setValue(plate->height);
-    } else if (const auto* disc = std::get_if<Circle>(&value->shape))
-        first_->setValue(disc->diameter);
-    else {
-        const auto& ring = std::get<Washer>(value->shape);
-        first_->setValue(ring.outer_diameter);
-        second_->setValue(ring.inner_diameter);
-    }
-    thickness_->setValue(value->thickness.value_or(0.0));
-    quantity_->setValue(value->quantity);
-    const auto filename = cam_file_name(*value);
-    validation_->setText(filename.error.isEmpty() ? QStringLiteral("✓ Деталь готова к экспорту")
-                                                  : filename.error);
-    validation_->setStyleSheet(filename.error.isEmpty() ? "color: #15803d;" : "color: #b45309;");
-    filename_->setText(filename.name.isEmpty() ? QString{}
-                                               : QStringLiteral("Имя DXF:\n%1").arg(filename.name));
-    loading_ = false;
+void MainWindow::finishTableEdit() {
+    if (auto* focus = QApplication::focusWidget(); focus && table_->isAncestorOf(focus))
+        table_->setFocus(Qt::OtherFocusReason);
 }
-void MainWindow::updatePart() {
-    if (loading_ || !model_->part(currentRow()))
+bool MainWindow::discardChanges() {
+    return !model_->hasPendingChanges() ||
+           QMessageBox::question(
+               this, QStringLiteral("Изменения списка"),
+               QStringLiteral("В списке есть изменения, ещё не экспортированные в DXF. "
+                              "При продолжении они будут потеряны. "
+                              "Исходный файл не изменён. Продолжить?"),
+               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+}
+bool MainWindow::loadExcel(const QString& path, bool interactive) {
+    finishTableEdit();
+    auto imported = import_list(path);
+    if (!imported.error.isEmpty() && !imported.needs_text_options) {
+        if (interactive)
+            QMessageBox::warning(this, QStringLiteral("Не удалось открыть список"), imported.error);
+        statusBar()->showMessage(imported.error);
+        return false;
+    }
+    return applyImport(path, std::move(imported), interactive);
+}
+bool MainWindow::applyImport(const QString& path, ImportResult imported, bool interactive) {
+    finishTableEdit();
+    if (imported.needs_text_options) {
+        if (!interactive)
+            return false;
+        auto configured = configure_text_import(this, path, imported.error);
+        if (!configured)
+            return false;
+        imported = std::move(*configured);
+    }
+    if (model_->hasPendingChanges() && (!interactive || !discardChanges()))
+        return false;
+    model_->replace(std::move(imported.rows));
+    source_->setText(QStringLiteral("%1 · %2 · строк: %3")
+                         .arg(QFileInfo(path).fileName(), imported.source_description)
+                         .arg(model_->rowCount()));
+    source_->setToolTip(QFileInfo(path).absoluteFilePath());
+    source_->show();
+    setWindowTitle(QStringLiteral("DXF Generator — %1[*]").arg(QFileInfo(path).fileName()));
+    table_->selectRow(0);
+    refreshSummary();
+    loadSelection();
+    statusBar()->showMessage(QStringLiteral("Выберите строки без ошибок для экспорта DXF."));
+    return true;
+}
+void MainWindow::loadSelection() {
+    const int row = currentRow();
+    const auto* part = model_->part(row);
+    const bool included = model_->isIncluded(row);
+    preview_->setPart(part, included);
+    const bool manual = model_->sourceRow(row) == 0;
+    remove_->setEnabled(manual);
+    remove_->setVisible(manual);
+    if (row < 0 || row >= model_->rowCount()) {
+        details_->setText(QStringLiteral("Выберите строку таблицы."));
+        validation_->clear();
         return;
-    Part value = *model_->part(currentRow());
-    value.quantity = quantity_->value();
-    value.thickness =
-        thickness_->value() > 0 ? std::optional<double>(thickness_->value()) : std::nullopt;
-    if (shape_->currentIndex() == 0)
-        value.shape = Rectangle{first_->value(), second_->value()};
-    else if (shape_->currentIndex() == 1)
-        value.shape = Circle{first_->value()};
-    else
-        value.shape = Washer{first_->value(), second_->value()};
-    model_->update(currentRow(), value);
-    dirty_ = true;
-    preview_->setPart(&value);
-    const auto filename = cam_file_name(value);
-    validation_->setText(filename.error.isEmpty() ? QStringLiteral("✓ Деталь готова к экспорту")
-                                                  : filename.error);
-    validation_->setStyleSheet(filename.error.isEmpty() ? "color: #15803d;" : "color: #b45309;");
-    filename_->setText(filename.name.isEmpty() ? QString{}
-                                               : QStringLiteral("Имя DXF:\n%1").arg(filename.name));
+    }
+    const auto row_label = model_->sourceRow(row)
+                               ? QStringLiteral("Деталь №%1 · строка файла %2")
+                                     .arg(row + 1)
+                                     .arg(model_->sourceRow(row))
+                               : QStringLiteral("Деталь №%1 · добавлена вручную").arg(row + 1);
+    details_->setText(row_label + (model_->fileName(row).isEmpty()
+                                       ? QString{}
+                                       : QStringLiteral("\n\nИмя DXF:\n") + model_->fileName(row)));
+    const auto errors = model_->errors(row);
+    validation_->setText(
+        errors.isEmpty()
+            ? (included ? QStringLiteral("✓ Готово к экспорту") : QStringLiteral("Не в экспорте"))
+            : (included ? QString{} : QStringLiteral("Не в экспорте\n")) + errors.join('\n'));
+    validation_->setStyleSheet(!errors.isEmpty() ? "color: #b45309;"
+                               : included        ? "color: #15803d;"
+                                                 : "color: #64748b;");
 }
 void MainWindow::refreshSummary() {
-    const auto included = model_->included();
-    int invalid = 0;
-    qint64 count = 0;
-    for (const auto& part : included) {
-        if (!cam_file_name(part).error.isEmpty())
-            ++invalid;
-        count += part.quantity;
+    setWindowModified(model_->hasPendingChanges());
+    int errors = 0;
+    int selected = 0;
+    int selected_errors = 0;
+    for (int row = 0; row < model_->rowCount(); ++row) {
+        const bool invalid = !model_->errors(row).isEmpty();
+        errors += invalid;
+        selected += model_->isIncluded(row);
+        selected_errors += model_->isIncluded(row) && invalid;
     }
-    summary_->setText(
-        QStringLiteral("К экспорту: %1 поз. · %2 шт.%3")
-            .arg(static_cast<qulonglong>(included.size()))
-            .arg(count)
-            .arg(invalid ? QStringLiteral(" · исправьте ошибок: %1").arg(invalid) : QString{}));
-    export_->setEnabled(!included.empty() && !invalid);
+    summary_->setText(QStringLiteral("Строк: %1 · ошибок: %2 · выбрано: %3%4")
+                          .arg(model_->rowCount())
+                          .arg(errors)
+                          .arg(selected)
+                          .arg(selected_errors
+                                   ? QStringLiteral(" · исправьте или снимите флажки с %1 строк")
+                                         .arg(selected_errors)
+                                   : QString{}));
+    export_->setEnabled(model_->canExport());
+    gallery_->setEnabled(model_->rowCount() > 0);
+}
+void MainWindow::createManual() {
+    finishTableEdit();
+    auto created = create_part(this);
+    if (!created)
+        return;
+    table_->selectRow(model_->add(std::move(*created)));
+    refreshSummary();
+    loadSelection();
 }
 void MainWindow::exportFiles() {
+    finishTableEdit();
+    if (!model_->canExport())
+        return;
     const auto directory = QFileDialog::getExistingDirectory(this, QStringLiteral("Папка для DXF"));
     if (directory.isEmpty())
         return;
@@ -289,16 +372,116 @@ void MainWindow::exportFiles() {
             result.error + QStringLiteral("\nУже сохранено файлов: %1").arg(result.files.size()));
         return;
     }
+    model_->markExported();
     statusBar()->showMessage(QStringLiteral("Сохранено DXF: %1 · %2")
                                  .arg(result.files.size())
                                  .arg(QDir::toNativeSeparators(directory)));
 }
+void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
+    if (!event->mimeData()->hasUrls()) {
+        event->ignore();
+        return;
+    }
+    prepareDrop(event->mimeData());
+    // Accept entry even for invalid files so we receive leave/move events and
+    // can keep the explanation visible while displaying the forbidden cursor.
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+}
+void MainWindow::dragMoveEvent(QDragMoveEvent* event) {
+    if (drop_import_ && drop_error_.isEmpty()) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    } else
+        event->ignore();
+}
+void MainWindow::dragLeaveEvent(QDragLeaveEvent* event) {
+    clearDrop();
+    event->accept();
+}
+void MainWindow::dropEvent(QDropEvent* event) {
+    const auto urls = event->mimeData()->urls();
+    if (!drop_import_ || urls.size() != 1 || urls[0].toLocalFile() != drop_path_)
+        prepareDrop(event->mimeData());
+    if (!drop_error_.isEmpty()) {
+        event->ignore();
+        statusBar()->showMessage(drop_error_, 5000);
+        drop_timer_->start(3000);
+        return;
+    }
+    const auto path = drop_path_;
+    auto imported = std::move(*drop_import_);
+    clearDrop();
+    if (applyImport(path, std::move(imported), true)) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    } else
+        event->ignore();
+}
+void MainWindow::prepareDrop(const QMimeData* mime) {
+    clearDrop();
+    const auto urls = mime->urls();
+    if (urls.size() != 1) {
+        drop_error_ = QStringLiteral("Перетащите один список деталей: XLSX, CSV или TSV.");
+    } else if (!urls[0].isLocalFile()) {
+        drop_error_ = QStringLiteral("Перетащите файл с диска, а не ссылку на сайт.");
+    } else if (QFileInfo(urls[0].toLocalFile()).isDir()) {
+        drop_error_ = QStringLiteral("Это папка. Выберите файл XLSX, CSV или TSV.");
+    } else {
+        drop_path_ = urls[0].toLocalFile();
+        drop_import_ = import_list(drop_path_);
+        if (!drop_import_->needs_text_options)
+            drop_error_ = drop_import_->error;
+    }
+    showDropOverlay(drop_error_);
+}
+void MainWindow::showDropOverlay(const QString& error) {
+    const bool valid = error.isEmpty();
+    drop_overlay_->setProperty("valid", valid);
+    drop_overlay_->setStyleSheet(
+        valid ? "QFrame#dropOverlay { background: rgba(239,246,255,240); "
+                "border: 2px dashed #2563eb; border-radius: 10px; color: #1e40af; }"
+              : "QFrame#dropOverlay { background: rgba(254,242,242,240); "
+                "border: 2px dashed #dc2626; border-radius: 10px; color: #991b1b; }");
+    drop_title_->setText(valid ? QStringLiteral("Отпустите, чтобы открыть список")
+                               : QStringLiteral("Не удалось принять файл"));
+    drop_message_->setText(
+        valid ? (drop_import_->needs_text_options
+                     ? QStringLiteral("После отпускания выберите кодировку и разделитель файла.")
+                     : QStringLiteral("%1 · строк: %2\n%3")
+                           .arg(drop_import_->source_description)
+                           .arg(drop_import_->rows.size())
+                           .arg(model_->rowCount() ? QStringLiteral("Текущий список будет заменён")
+                                                   : QStringLiteral("Детали появятся в списке")))
+              : error);
+    drop_overlay_->setGeometry(rect().adjusted(8, 8, -8, -8));
+    drop_overlay_->show();
+    drop_overlay_->raise();
+}
+void MainWindow::clearDrop() {
+    drop_timer_->stop();
+    drop_overlay_->hide();
+    drop_path_.clear();
+    drop_error_.clear();
+    drop_import_.reset();
+}
+void MainWindow::resizeEvent(QResizeEvent* event) {
+    QMainWindow::resizeEvent(event);
+    // resize() in the constructor can run before the overlay is constructed.
+    if (drop_overlay_)
+        drop_overlay_->setGeometry(rect().adjusted(8, 8, -8, -8));
+}
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if (dirty_ && QMessageBox::question(
-                      this, QStringLiteral("Закрыть окно?"),
-                      QStringLiteral("Список деталей хранится только в памяти. Закрыть окно? "
-                                     "Экспортированные DXF останутся в выбранной папке."),
-                      QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+    finishTableEdit();
+    QMessageBox question(QMessageBox::Question, QStringLiteral("Выход"),
+                         QStringLiteral("Закрыть программу?"), QMessageBox::Yes | QMessageBox::No,
+                         this);
+    question.setObjectName(QStringLiteral("exitConfirmation"));
+    question.button(QMessageBox::Yes)->setText(QStringLiteral("Да"));
+    question.button(QMessageBox::No)->setText(QStringLiteral("Нет"));
+    question.setDefaultButton(QMessageBox::No);
+    question.setEscapeButton(QMessageBox::No);
+    if (question.exec() != QMessageBox::Yes) {
         event->ignore();
         return;
     }

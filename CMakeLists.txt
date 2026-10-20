@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(DxfGenerator VERSION 0.1.0 LANGUAGES CXX)
+project(DxfGenerator VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,16 +42,43 @@ if(DXFGEN_BUILD_DESKTOP)
         endif()
     endif()
 
-    qt_add_executable(dxf-generator WIN32
-        src/desktop/main.cpp
+    include(cmake/QXlsx.cmake)
+    add_library(dxfgen_update STATIC src/update/release.cpp src/update/http.cpp src/update/install.cpp)
+    target_include_directories(dxfgen_update PUBLIC src)
+    target_link_libraries(dxfgen_update PUBLIC Qt6::Core)
+    if(WIN32)
+        target_link_libraries(dxfgen_update PRIVATE winhttp user32)
+        target_compile_definitions(dxfgen_update PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+    endif()
+    dxfgen_project_options(dxfgen_update)
+    add_library(dxfgen_io STATIC src/io/export_service.cpp src/io/excel_import.cpp src/io/list_import.cpp)
+    target_include_directories(dxfgen_io PUBLIC src)
+    target_link_libraries(dxfgen_io PUBLIC dxfgen_core Qt6::Core PRIVATE QXlsx::QXlsx)
+    dxfgen_project_options(dxfgen_io)
+
+    add_library(dxfgen_widgets STATIC
+        src/desktop/app_icon.cpp src/desktop/app_icon.hpp
+        src/desktop/parts_gallery.cpp src/desktop/parts_gallery.hpp
+        src/desktop/text_import_dialog.cpp src/desktop/text_import_dialog.hpp
+        src/desktop/excel_help.cpp src/desktop/excel_help.hpp
+        src/desktop/update_dialog.cpp src/desktop/update_dialog.hpp
         src/desktop/main_window.cpp src/desktop/main_window.hpp
+        src/desktop/part_dialog.cpp src/desktop/part_dialog.hpp
         src/desktop/parts_model.cpp src/desktop/parts_model.hpp
-        src/desktop/preview_widget.cpp src/desktop/preview_widget.hpp
-        src/io/export_service.cpp src/io/export_service.hpp)
+        src/desktop/parts_delegate.cpp src/desktop/parts_delegate.hpp
+        src/desktop/preview_widget.cpp src/desktop/preview_widget.hpp)
     # Future QObject signals work out of the box; no Qt code generation in the core.
-    set_target_properties(dxf-generator PROPERTIES AUTOMOC ON)
-    target_link_libraries(dxf-generator PRIVATE dxfgen_core Qt6::Widgets)
-    target_include_directories(dxf-generator PRIVATE src)
+    set_target_properties(dxfgen_widgets PROPERTIES AUTOMOC ON)
+    qt_add_resources(dxfgen_widgets "excel_template"
+        PREFIX "/templates" BASE "examples" FILES "examples/Детали.xlsx")
+    qt_add_resources(dxfgen_widgets "legal_notices"
+        PREFIX "/licenses" BASE "resources/licenses"
+        FILES "resources/licenses/THIRD-PARTY-NOTICES.txt")
+    target_link_libraries(dxfgen_widgets PUBLIC dxfgen_io dxfgen_update Qt6::Widgets)
+    target_include_directories(dxfgen_widgets PUBLIC src)
+    dxfgen_project_options(dxfgen_widgets)
+    qt_add_executable(dxf-generator WIN32 src/desktop/main.cpp)
+    target_link_libraries(dxf-generator PRIVATE dxfgen_widgets)
     target_compile_definitions(dxf-generator PRIVATE DXFGEN_VERSION="${PROJECT_VERSION}")
     dxfgen_project_options(dxf-generator)
     if(WIN32)
@@ -72,16 +99,54 @@ if(DXFGEN_BUILD_DESKTOP)
     endif()
     install(TARGETS dxf-generator RUNTIME DESTINATION .)
     if(BUILD_TESTING)
+        add_executable(dxfgen_update_tests tests/update_tests.cpp)
+        target_link_libraries(dxfgen_update_tests PRIVATE dxfgen_update)
+        dxfgen_project_options(dxfgen_update_tests)
+        add_test(NAME update_safety COMMAND dxfgen_update_tests)
+        if(WIN32 AND DXFGEN_SINGLE_EXE)
+            add_executable(dxfgen_native_update_tests tests/native_update_tests.cpp)
+            target_link_libraries(dxfgen_native_update_tests PRIVATE dxfgen_update)
+            target_compile_definitions(dxfgen_native_update_tests PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+            dxfgen_project_options(dxfgen_native_update_tests)
+            add_test(NAME native_update COMMAND dxfgen_native_update_tests
+                --driver $<TARGET_FILE:dxf-generator> "${PROJECT_VERSION}")
+            set_tests_properties(native_update PROPERTIES TIMEOUT 90)
+        endif()
+        add_executable(dxfgen_update_ui_tests tests/update_ui_tests.cpp)
+        target_link_libraries(dxfgen_update_ui_tests PRIVATE dxfgen_widgets)
+        dxfgen_project_options(dxfgen_update_ui_tests)
+        add_test(NAME update_workflow COMMAND dxfgen_update_ui_tests)
+        set_tests_properties(update_safety update_workflow PROPERTIES TIMEOUT 20)
+        if(UNIX AND NOT APPLE)
+            set_tests_properties(update_workflow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        endif()
         add_test(NAME desktop_smoke COMMAND dxf-generator --smoke-test)
         set_tests_properties(desktop_smoke PROPERTIES TIMEOUT 20)
         if(UNIX AND NOT APPLE)
             set_tests_properties(desktop_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
         endif()
-        add_executable(dxfgen_export_tests tests/export_tests.cpp src/io/export_service.cpp)
+        add_executable(dxfgen_export_tests tests/export_tests.cpp)
         target_include_directories(dxfgen_export_tests PRIVATE src)
-        target_link_libraries(dxfgen_export_tests PRIVATE dxfgen_core Qt6::Core)
+        target_link_libraries(dxfgen_export_tests PRIVATE dxfgen_io)
         dxfgen_project_options(dxfgen_export_tests)
         add_test(NAME export_safety COMMAND dxfgen_export_tests)
+        add_executable(dxfgen_import_tests tests/import_tests.cpp)
+        target_link_libraries(dxfgen_import_tests PRIVATE dxfgen_widgets)
+        dxfgen_project_options(dxfgen_import_tests)
+        add_test(NAME excel_import COMMAND dxfgen_import_tests "${PROJECT_SOURCE_DIR}")
+        add_executable(dxfgen_list_import_tests tests/list_import_tests.cpp)
+        target_link_libraries(dxfgen_list_import_tests PRIVATE dxfgen_widgets)
+        dxfgen_project_options(dxfgen_list_import_tests)
+        add_test(NAME list_import COMMAND dxfgen_list_import_tests "${PROJECT_SOURCE_DIR}")
+        set_tests_properties(list_import PROPERTIES TIMEOUT 20)
+        add_executable(dxfgen_import_ui_tests tests/import_ui_tests.cpp)
+        target_link_libraries(dxfgen_import_ui_tests PRIVATE dxfgen_widgets)
+        dxfgen_project_options(dxfgen_import_ui_tests)
+        add_test(NAME excel_workflow COMMAND dxfgen_import_ui_tests "${PROJECT_SOURCE_DIR}")
+        set_tests_properties(excel_import excel_workflow PROPERTIES TIMEOUT 20)
+        if(UNIX AND NOT APPLE)
+            set_tests_properties(excel_workflow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        endif()
     endif()
 endif()
 

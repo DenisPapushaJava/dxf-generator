@@ -58,6 +58,25 @@ FileNameResult cam_file_name(const Part& part) {
     return error.isEmpty() ? FileNameResult{stem, {}} : FileNameResult{{}, error};
 }
 
+std::vector<FileNameResult> plan_file_names(const std::vector<Part>& parts) {
+    std::vector<FileNameResult> result;
+    QSet<QString> planned;
+    for (const auto& part : parts) {
+        auto filename = cam_file_name(part);
+        if (filename.error.isEmpty()) {
+            const QString stem = filename.name.chopped(4);
+            int suffix = 1;
+            while (planned.contains(path_key(filename.name)))
+                filename.name = stem + '(' + QString::number(suffix++) + ").dxf";
+            filename.error = filename_error(filename.name);
+            if (filename.error.isEmpty())
+                planned.insert(path_key(filename.name));
+        }
+        result.push_back(std::move(filename));
+    }
+    return result;
+}
+
 ExportResult export_parts(const QString& directory, const std::vector<Part>& parts) {
     ExportResult result;
     if (parts.empty()) {
@@ -75,34 +94,26 @@ ExportResult export_parts(const QString& directory, const std::vector<Part>& par
     };
     std::vector<Item> plan;
     QSet<QString> existing;
-    QSet<QString> planned;
     for (const QString& name :
          dir.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot))
         existing.insert(path_key(name));
-    for (const auto& part : parts) {
-        const auto filename = cam_file_name(part);
+    const auto filenames = plan_file_names(parts);
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        const auto& part = parts[i];
+        const auto& filename = filenames[i];
         if (!filename.error.isEmpty()) {
             result.error = QStringLiteral("Позиция %1: %2")
                                .arg(static_cast<qulonglong>(plan.size() + 1))
                                .arg(filename.error);
             return result;
         }
-        const QString stem = filename.name.chopped(4);
-        QString name = filename.name;
-        int suffix = 1;
-        while (planned.contains(path_key(name)))
-            name = stem + '(' + QString::number(suffix++) + ").dxf";
-        if (const auto error = filename_error(name); !error.isEmpty()) {
-            result.error = error;
-            return result;
-        }
+        const QString& name = filename.name;
         if (existing.contains(path_key(name))) {
             result.error = QStringLiteral("Файл или папка уже существует: %1\n"
                                           "Выберите другую папку экспорта.")
                                .arg(dir.absoluteFilePath(name));
             return result;
         }
-        planned.insert(path_key(name));
         plan.push_back({dir.absoluteFilePath(name), QByteArray::fromStdString(write_dxf(part))});
     }
     for (const auto& item : plan) {
