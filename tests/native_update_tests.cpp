@@ -15,8 +15,11 @@
 #include <stdexcept>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <tlhelp32.h>
+// Windows SDK Toolhelp declarations require windows.h first.
+// clang-format off
 #include <windows.h>
+#include <tlhelp32.h>
+// clang-format on
 
 namespace {
 using namespace dxfgen::update;
