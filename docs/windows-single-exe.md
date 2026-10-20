@@ -38,15 +38,19 @@ python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.
 
 Справка: [Qt static plugins](https://doc.qt.io/qt-6.10/plugins-howto.html), [qt_import_plugins](https://doc.qt.io/qt-6/qt-import-plugins.html), [Qt configure options](https://doc.qt.io/qt-6.10/configure-options.html).
 
-## Проверенный тестовый артефакт
+## Проверенный релиз 0.2.0
 
-2026-10-20, [Actions run 39324893575](https://github.com/DenisPapushaJava/dxf-generator/actions/runs/39324893575), исходники приложения `2cc9d08`:
+2026-10-20, [Actions run 39402143696](https://github.com/DenisPapushaJava/dxf-generator/actions/runs/39402143696), исходники EXE `5f1d64b0d8706931fdf5156dffc8664b1b84b813`:
 
 - MSVC 19.44 x64, статический QtBase 6.10.3 и статический C++ runtime.
-- Один `dxf-generator.exe`: **17 050 624 байта**, 16,2607 МиБ; без UPX и самораспаковки. Ручное создание использует автоматические CAM-имена, поля названия нет; в имени круга только диаметр.
-- CTest: 3/3 (запуск окна, CAM-имена/локали и защита файлов при экспорте, геометрия/DXF).
-- PE-аудит: только системные DLL, включая проверку delay imports; лимит 20 МиБ пройден.
-- В PE встроены иконка, сведения о версии и manifest. Рядом не нужны Qt DLL, runtime компилятора, `platforms/`, шрифты или настройки.
-- SHA-256: `a9836c8f356024f5c55abe2c2369e960c81815355ec17b0aa2b7e6bd9bf50e77`.
+- Один EXE: **18 012 160 байт (17.18 МиБ / 18.01 МБ)**; без UPX и самораспаковки. Включены XLSX/CSV/TSV, редактирование, галерея и ручное обновление.
+- CTest: **9/9**. `native_update` запускает настоящий помощник и финальный GUI EXE, проверяет замену, отмену, восстановление предыдущего EXE после сбоя запуска и очистку в папке с кириллицей и пробелами. Контрольные Excel/DXF остаются неизменными.
+- WinHTTP проверен реальным запросом к GitHub API (404 до первой публикации — корректный ответ).
+- PE-аудит: только системные DLL, включая delay imports; лимит 20 МиБ пройден.
+- В PE встроены иконка, сведения о версии, manifest, шаблон и лицензионные уведомления. Отдельные Qt DLL, runtime компилятора и `platforms/` не нужны.
+- SHA-256: `0215b34cb07833c27afc4bdbea76046e90cbae6b33af56921d8979442fa8cc92`.
 
-Это подтверждение сборки и запуска на Windows CI. Ручная проверка чистых Windows 10/11, разных DPI и целевой CAD/CAM остаётся отдельным этапом перед пользовательским релизом.
+Обычный CI Linux/Windows также прошёл: [Actions run 39402143379](https://github.com/DenisPapushaJava/dxf-generator/actions/runs/39402143379).
+Тег релиза включает последующее изменение только документации с этими результатами; исполняемый код и ресурсы совпадают с проверенным commit выше.
+
+Это подтверждение сборки и запуска на Windows CI. Ручная проверка чистых Windows 10/11, разных DPI и целевой CAD/CAM остаётся отдельной проверкой и здесь не заявляется.
