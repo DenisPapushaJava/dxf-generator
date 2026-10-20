@@ -29,6 +29,7 @@
 #include <QResizeEvent>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QStyleOptionViewItem>
 #include <QTableView>
 #include <QTimer>
 #include <QUrl>
@@ -37,6 +38,23 @@
 
 namespace dxfgen {
 namespace {
+class PartsTable final : public QTableView {
+  protected:
+    void initViewItemOption(QStyleOptionViewItem* option) const override {
+        QTableView::initViewItemOption(option);
+        // Keep stripes close to the current background, independent of the system accent.
+        // Derive them at paint time so a system theme change needs no palette override.
+        for (const auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {
+            const auto base = option->palette.color(group, QPalette::Base);
+            const auto text = option->palette.color(group, QPalette::Text);
+            option->palette.setColor(group, QPalette::AlternateBase,
+                                     QColor((24 * base.red() + text.red()) / 25,
+                                            (24 * base.green() + text.green()) / 25,
+                                            (24 * base.blue() + text.blue()) / 25));
+        }
+    }
+};
+
 QLabel* label(const QString& text = {}) {
     auto* result = new QLabel(text);
     result->setTextFormat(Qt::PlainText);
@@ -103,7 +121,7 @@ MainWindow::MainWindow() {
     list_toolbar->addWidget(ready);
     list_layout->addLayout(list_toolbar);
     model_ = new PartsModel(this);
-    table_ = new QTableView;
+    table_ = new PartsTable;
     table_->setObjectName(QStringLiteral("partsTable"));
     table_->setModel(model_);
     table_->setItemDelegate(new PartsDelegate(table_));
@@ -148,8 +166,7 @@ MainWindow::MainWindow() {
     preview_toolbar->addWidget(gallery_);
     preview_layout->addLayout(preview_toolbar);
     preview_ = new PreviewWidget;
-    preview_->setMaximumHeight(300);
-    preview_layout->addWidget(preview_);
+    preview_layout->addWidget(preview_, 1);
     connect(gallery_, &QPushButton::clicked, this, [this] {
         finishTableEdit();
         const int row = show_parts_gallery(this, *model_, currentRow());
@@ -167,7 +184,6 @@ MainWindow::MainWindow() {
     validation_->setObjectName(QStringLiteral("validationLabel"));
     validation_->setAccessibleName(QStringLiteral("Ошибки выбранной строки"));
     preview_layout->addWidget(validation_);
-    preview_layout->addStretch();
     preview_pane->setMinimumWidth(preview_->minimumWidth() +
                                   preview_layout->contentsMargins().left() +
                                   preview_layout->contentsMargins().right());

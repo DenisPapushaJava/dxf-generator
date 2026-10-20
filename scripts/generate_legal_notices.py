@@ -5,13 +5,16 @@ import json
 from pathlib import Path
 import posixpath
 import tarfile
+from release_common import qt_config, verify_qt_archive
 
-QT_COMMIT = "7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4"
+QT = qt_config()
+QT_COMMIT = QT["commit"]
 QT_ROOT = f"qtbase-{QT_COMMIT}"
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def generate(archive, output):
+    verify_qt_archive(archive, QT)
     output.mkdir(parents=True, exist_ok=True)
     sections = [
         "DXF Generator\nOwn application code: MIT.\n"
@@ -22,7 +25,7 @@ def generate(archive, output):
         "Modified Qt builds may be relinked and run; no installation key or signature restriction applies.\n",
         "Application MIT license\n" + (ROOT / "LICENSE").read_text(),
         "QXlsx MIT license\n" + (ROOT / "third_party/qxlsx/LICENSE").read_text(),
-        f"QtBase 6.10.3, commit {QT_COMMIT}\n"
+        f"QtBase {QT['version']}, commit {QT_COMMIT}\n"
         "The following is the complete attribution catalogue of the pinned Qt source tree.\n"
         "It also includes components/tools not enabled in our Windows configuration.\n",
     ]

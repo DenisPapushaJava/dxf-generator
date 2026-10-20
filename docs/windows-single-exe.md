@@ -8,7 +8,7 @@
 - `qt_import_plugins(... NO_DEFAULT INCLUDE Qt6::QWindowsIntegrationPlugin)`: Windows-плагин внутри EXE, без папки `platforms`.
 - Manifest: обычные права пользователя, Windows 10 compatibility, PerMonitorV2 DPI и long paths.
 - `scripts/verify_windows_exe.py`: проверка PE32+ x64, обычных и отложенных DLL-импортов. Неизвестные внешние DLL завершают проверку ошибкой. Список системных DLL намеренно явный; расширять его только после проверки источника зависимости.
-- Ручной workflow `.github/workflows/windows-static.yml`: QtBase 6.10.3 из commit `7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4`, MSVC 2022, static runtime, кеш SDK, сборка/CTest/аудит, тестовый EXE в Actions artifact на 7 дней. Обычные push не пересобирают Qt.
+- Ручной workflow `.github/workflows/windows-static.yml`: рецепт `cmake/qt-static.json` (QtBase 6.10.3, commit `7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4`), MSVC 2022, static runtime, кеш SDK, сборка/CTest/аудит. Проверенный EXE и `build-info.json` сохраняются в Actions artifact на 7 дней. `prepare_release` дополнительно создаёт полный черновик Release; без переключателя остаётся проверка EXE. [Порядок выпуска](releasing.md). Обычные push не пересобирают Qt.
 
 Qt использует системную `Authz.dll` для проверки файловых разрешений Windows; эта зависимость разрешена аудитом ([Microsoft: AuthzAccessCheck](https://learn.microsoft.com/en-us/windows/win32/api/authz/nf-authz-authzaccesscheck)). SDK кешируется сразу после установки, чтобы ошибка приложения или аудита не требовала повторной сборки Qt.
 

@@ -1,0 +1,12 @@
+{
+  "version": "6.10.3",
+  "commit": "7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4",
+  "source_sha256": "2b68cc296ebdf466f6f5ac3de5b9c8eed9541f98a66602d6d6120574b04b432c",
+  "configure_args": [
+    "-static", "-static-runtime", "-release", "-optimize-size",
+    "-opensource", "-confirm-license", "-nomake", "tests", "-nomake", "examples",
+    "-no-opengl", "-no-feature-vulkan", "-no-feature-network", "-no-feature-sql",
+    "-no-feature-dbus", "-no-feature-printsupport", "-no-feature-testlib", "-no-icu",
+    "-qt-zlib", "-qt-pcre", "-qt-freetype", "-qt-harfbuzz", "-qt-libpng", "-no-libjpeg"
+  ]
+}

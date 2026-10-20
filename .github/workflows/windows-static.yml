@@ -1,42 +1,87 @@
 name: Windows single EXE (manual)
 on:
   workflow_dispatch:
+    inputs:
+      prepare_release:
+        description: Package sources/examples and create a new draft Release (never publish)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: windows-static-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.metadata.outputs.commit }}
+      version: ${{ steps.metadata.outputs.version }}
+      linux_required: ${{ steps.metadata.outputs.linux_required }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check version, release availability and completed CI for this commit
+        id: metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREPARE_RELEASE: ${{ inputs.prepare_release }}
+        run: |
+          args=(--reuse-ci)
+          if [[ "$PREPARE_RELEASE" == 'true' ]]; then args+=(--create-draft); fi
+          python3 scripts/release_tools.py preflight "${args[@]}" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: prepare
+    if: needs.prepare.outputs.linux_required == 'true'
+    uses: ./.github/workflows/linux-checks.yml
+
   static-exe:
+    needs: prepare
     runs-on: windows-2022
     timeout-minutes: 90
     env:
       QT_STATIC_ROOT: ${{ github.workspace }}/build/qt-install
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
-      - name: Cache static Qt 6.10.3
+      - name: Read pinned Qt recipe and compiler cache key
+        id: qt
+        run: python scripts/release_tools.py qt-outputs >> $env:GITHUB_OUTPUT
+      - name: Restore static Qt SDK
         id: qt-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/qt-install
-          key: qtbase-6.10.3-7ddbc87-msvc2022-x64-static-size-v1
-      - name: Fetch pinned QtBase source (LGPL/GPL/commercial; see docs/licensing.md)
+          key: ${{ steps.qt.outputs.cache_key }}
+      - name: Fetch pinned QtBase source
         if: steps.qt-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: qt/qtbase
-          ref: 7ddbc87d8e14ce51d2957ea72d0a6077593d5ff4 # v6.10.3
+          ref: ${{ steps.qt.outputs.commit }}
           path: build/qt-source
           persist-credentials: false
       - name: Build minimal static QtBase
         if: steps.qt-cache.outputs.cache-hit != 'true'
         shell: cmd
+        env:
+          QT_CONFIGURE_FLAGS: ${{ steps.qt.outputs.configure_flags }}
         run: |
           mkdir build\qt-build
           cd build\qt-build
-          call ..\qt-source\configure.bat -prefix "%QT_STATIC_ROOT%" -static -static-runtime -release -optimize-size -opensource -confirm-license -nomake tests -nomake examples -no-opengl -no-feature-vulkan -no-feature-network -no-feature-sql -no-feature-dbus -no-feature-printsupport -no-feature-testlib -no-icu -qt-zlib -qt-pcre -qt-freetype -qt-harfbuzz -qt-libpng -no-libjpeg
+          call ..\qt-source\configure.bat -prefix "%QT_STATIC_ROOT%" %QT_CONFIGURE_FLAGS%
           if errorlevel 1 exit /b 1
           cmake --build . --parallel 4
           if errorlevel 1 exit /b 1
@@ -46,24 +91,76 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/qt-install
-          key: qtbase-6.10.3-7ddbc87-msvc2022-x64-static-size-v1
-      - name: Build, test and audit single executable
-        shell: pwsh
+          key: ${{ steps.qt.outputs.cache_key }}
+      - name: Configure application
         run: |
           cmake --preset release-windows-static
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          exit $LASTEXITCODE
+      - name: Build application and test executables
+        run: |
           cmake --build --preset release-windows-static --parallel 2
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          exit $LASTEXITCODE
+      - name: Run all Windows tests including native update and rollback
+        run: |
           ctest --preset release-windows-static
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          exit $LASTEXITCODE
+      - name: Audit PE imports and size
+        run: |
           python scripts/verify_windows_exe.py build/release-windows-static/dxf-generator.exe --max-mib 20
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          exit $LASTEXITCODE
+      - name: Check real WinHTTP request
+        run: |
           & build/release-windows-static/dxfgen_update_tests.exe --live-check
           exit $LASTEXITCODE
-      - name: Store test artifact (not a GitHub Release)
+      - name: Record the checked binary and source commit
+        run: |
+          New-Item -ItemType Directory build/windows-artifact | Out-Null
+          Copy-Item build/release-windows-static/dxf-generator.exe build/windows-artifact/dxf-generator-windows-x64.exe
+          python scripts/release_tools.py record-build --exe build/windows-artifact/dxf-generator-windows-x64.exe --output build/windows-artifact/build-info.json
+          exit $LASTEXITCODE
+      - name: Store checked EXE and build record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dxf-generator-windows-x64-static-test
-          path: build/release-windows-static/dxf-generator.exe
+          path: build/windows-artifact/
           if-no-files-found: error
           retention-days: 7
+
+  draft:
+    needs: [prepare, linux, static-exe]
+    if: >-
+      !cancelled() && inputs.prepare_release && needs.prepare.result == 'success' &&
+      needs.static-exe.result == 'success' &&
+      (needs.linux.result == 'success' || needs.linux.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dxf-generator-windows-x64-static-test
+          path: build/windows-artifact
+      - name: Read Qt source archive URL
+        id: qt
+        run: python3 scripts/release_tools.py qt-outputs >> "$GITHUB_OUTPUT"
+      - name: Fetch exact Qt sources for redistribution
+        env:
+          QT_ARCHIVE_URL: ${{ steps.qt.outputs.archive_url }}
+        run: |
+          curl --fail --location --retry 3 "$QT_ARCHIVE_URL" --output build/qtbase.tar.gz
+      - name: Package the checked EXE, examples, sources, notices and checksums
+        run: |
+          python3 scripts/package_release.py --ref "$GITHUB_SHA" \
+            --exe build/windows-artifact/dxf-generator-windows-x64.exe \
+            --build-info build/windows-artifact/build-info.json \
+            --qt-archive build/qtbase.tar.gz --output build/release-bundle
+      - name: Create a new draft (publication remains a separate manual action)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_tools.py create-draft build/release-bundle

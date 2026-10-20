@@ -1,0 +1,35 @@
+name: Linux checks
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install development tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build qt6-base-dev qt6-base-private-dev libgl1-mesa-dev python3-venv
+      - name: Build and test desktop
+        run: |
+          cmake --preset dev-linux
+          cmake --build --preset dev-linux --parallel 2
+          ctest --preset dev-linux
+      - name: Build and test Qt-free core
+        run: |
+          cmake --preset core-only
+          cmake --build --preset core-only --parallel 2
+          ctest --preset core-only
+      - name: Test release packaging and PE audit
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Independent DXF audit (development dependency only)
+        run: |
+          python3 -m venv build/dxf-audit
+          build/dxf-audit/bin/pip install ezdxf==1.4.3
+          build/core-only/dxfgen_fixture build/fixtures
+          build/dxf-audit/bin/python scripts/check_dxf.py build/fixtures

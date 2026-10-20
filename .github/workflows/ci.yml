@@ -1,8 +1,24 @@
 name: Build and test
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'design/**'
+      - '.vscode/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'design/**'
+      - '.vscode/**'
   workflow_dispatch:
+    inputs:
+      windows:
+        description: Also check Windows with shared Qt
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -13,40 +29,26 @@ concurrency:
 
 jobs:
   linux:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Install development tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build qt6-base-dev qt6-base-private-dev libgl1-mesa-dev python3-venv
-      - name: Build and test desktop
-        run: |
-          cmake --preset dev-linux
-          cmake --build --preset dev-linux --parallel 2
-          ctest --preset dev-linux
-      - name: Build and test Qt-free core
-        run: |
-          cmake --preset core-only
-          cmake --build --preset core-only --parallel 2
-          ctest --preset core-only
-      - name: Test PE import audit
-        run: python3 tests/test_pe_audit.py
-      - name: Independent DXF audit (development dependency only)
-        run: |
-          python3 -m venv build/dxf-audit
-          build/dxf-audit/bin/pip install ezdxf==1.4.3
-          build/core-only/dxfgen_fixture build/fixtures
-          build/dxf-audit/bin/python scripts/check_dxf.py build/fixtures
+    uses: ./.github/workflows/linux-checks.yml
 
   windows:
+    # Releases use the static build instead; don't also build shared Qt on main pushes.
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.windows)
     runs-on: windows-2022
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
+      - name: Read pinned Qt version
+        id: qt
+        run: python scripts/release_tools.py qt-outputs >> $env:GITHUB_OUTPUT
       - uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
         with:
-          version: '6.10.3'
+          version: ${{ steps.qt.outputs.version }}
           arch: win64_msvc2022_64
           archives: qtbase
           cache: true
